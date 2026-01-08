@@ -6,6 +6,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
+	"github.com/web3airdropos/backend/internal/models"
 	"github.com/web3airdropos/backend/internal/services"
 )
 
@@ -85,13 +86,13 @@ func (h *WalletHandler) Update(c *gin.Context) {
 		return
 	}
 
-	var req services.UpdateWalletRequest
+	var req map[string]interface{}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	wallet, err := h.services.Wallet.Update(userID, walletID, &req)
+	wallet, err := h.services.Wallet.Update(userID, walletID, req)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -117,14 +118,13 @@ func (h *WalletHandler) Delete(c *gin.Context) {
 }
 
 func (h *WalletHandler) GetBalance(c *gin.Context) {
-	userID := getUserID(c)
 	walletID, err := uuid.Parse(c.Param("id"))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid wallet ID"})
 		return
 	}
 
-	balance, err := h.services.Wallet.GetBalance(userID, walletID)
+	balance, err := h.services.Wallet.GetBalance(walletID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -141,13 +141,13 @@ func (h *WalletHandler) GetTransactions(c *gin.Context) {
 		return
 	}
 
-	transactions, err := h.services.Wallet.GetTransactions(userID, walletID, 50, 0)
+	transactions, total, err := h.services.Wallet.GetTransactions(userID, walletID, 50, 0)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"transactions": transactions})
+	c.JSON(http.StatusOK, gin.H{"transactions": transactions, "total": total})
 }
 
 func (h *WalletHandler) PrepareTransaction(c *gin.Context) {
@@ -196,16 +196,15 @@ func (h *WalletHandler) BulkCreate(c *gin.Context) {
 	
 	var req struct {
 		Count    int               `json:"count" binding:"required,min=1,max=50"`
-		Type     string            `json:"type" binding:"required"`
+		Type     models.WalletType `json:"type" binding:"required"`
 		GroupID  *uuid.UUID        `json:"group_id"`
-		Prefix   string            `json:"prefix"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	wallets, err := h.services.Wallet.BulkCreate(userID, req.Count, req.Type, req.GroupID, req.Prefix)
+	wallets, err := h.services.Wallet.BulkCreate(userID, req.Count, req.Type, req.GroupID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

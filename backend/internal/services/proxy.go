@@ -1,6 +1,7 @@
 package services
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -297,5 +298,3 @@ func (s *ProxyService) GetDialer(proxyID uuid.UUID) (func(network, addr string) 
 
 	return net.Dial, nil
 }
-
-import "encoding/json"

@@ -536,3 +536,109 @@ func (s *WalletService) getRPCURL(chainID int64) string {
 	}
 	return "https://eth.llamarpc.com"
 }
+
+// Wallet Group operations
+
+type UpdateWalletRequest struct {
+	Name    string      `json:"name"`
+	GroupID *uuid.UUID  `json:"group_id"`
+	Tags    []uuid.UUID `json:"tags,omitempty"`
+}
+
+type CreateWalletGroupRequest struct {
+	Name        string `json:"name" binding:"required"`
+	Description string `json:"description"`
+	Color       string `json:"color"`
+}
+
+type UpdateWalletGroupRequest struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Color       string `json:"color"`
+}
+
+func (s *WalletService) ListGroups(userID uuid.UUID) ([]models.WalletGroup, error) {
+	var groups []models.WalletGroup
+	if err := s.container.DB.Where("user_id = ?", userID).Preload("Wallets").Find(&groups).Error; err != nil {
+		return nil, err
+	}
+	return groups, nil
+}
+
+func (s *WalletService) CreateGroup(userID uuid.UUID, req *CreateWalletGroupRequest) (*models.WalletGroup, error) {
+	group := &models.WalletGroup{
+		ID:          uuid.New(),
+		UserID:      userID,
+		Name:        req.Name,
+		Description: req.Description,
+		Color:       req.Color,
+	}
+
+	if err := s.container.DB.Create(group).Error; err != nil {
+		return nil, err
+	}
+	return group, nil
+}
+
+func (s *WalletService) UpdateGroup(userID, groupID uuid.UUID, req *UpdateWalletGroupRequest) (*models.WalletGroup, error) {
+	var group models.WalletGroup
+	if err := s.container.DB.Where("id = ? AND user_id = ?", groupID, userID).First(&group).Error; err != nil {
+		return nil, errors.New("group not found")
+	}
+
+	updates := make(map[string]interface{})
+	if req.Name != "" {
+		updates["name"] = req.Name
+	}
+	if req.Description != "" {
+		updates["description"] = req.Description
+	}
+	if req.Color != "" {
+		updates["color"] = req.Color
+	}
+
+	if err := s.container.DB.Model(&group).Updates(updates).Error; err != nil {
+		return nil, err
+	}
+	return &group, nil
+}
+
+func (s *WalletService) DeleteGroup(userID, groupID uuid.UUID) error {
+	result := s.container.DB.Where("id = ? AND user_id = ?", groupID, userID).Delete(&models.WalletGroup{})
+	if result.RowsAffected == 0 {
+		return errors.New("group not found")
+	}
+	return nil
+}
+
+func (s *WalletService) AddWalletsToGroup(userID, groupID uuid.UUID, walletIDs []uuid.UUID) error {
+	var group models.WalletGroup
+	if err := s.container.DB.Where("id = ? AND user_id = ?", groupID, userID).First(&group).Error; err != nil {
+		return errors.New("group not found")
+	}
+
+	// Verify wallets belong to user
+	var wallets []models.Wallet
+	if err := s.container.DB.Where("id IN ? AND user_id = ?", walletIDs, userID).Find(&wallets).Error; err != nil {
+		return err
+	}
+
+	// Add wallets to group
+	return s.container.DB.Model(&group).Association("Wallets").Append(wallets)
+}
+
+func (s *WalletService) RemoveWalletsFromGroup(userID, groupID uuid.UUID, walletIDs []uuid.UUID) error {
+	var group models.WalletGroup
+	if err := s.container.DB.Where("id = ? AND user_id = ?", groupID, userID).First(&group).Error; err != nil {
+		return errors.New("group not found")
+	}
+
+	// Verify wallets belong to user
+	var wallets []models.Wallet
+	if err := s.container.DB.Where("id IN ? AND user_id = ?", walletIDs, userID).Find(&wallets).Error; err != nil {
+		return err
+	}
+
+	// Remove wallets from group
+	return s.container.DB.Model(&group).Association("Wallets").Delete(wallets)
+}

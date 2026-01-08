@@ -48,6 +48,7 @@ type WalletGroup struct {
 	UserID      uuid.UUID  `gorm:"type:uuid;not null" json:"user_id"`
 	Name        string     `gorm:"size:100;not null" json:"name"`
 	Description string     `gorm:"type:text" json:"description"`
+	Color       string     `gorm:"size:20" json:"color"`
 	Wallets     []Wallet   `gorm:"many2many:wallet_groups_wallets;" json:"wallets"`
 	CampaignID  *uuid.UUID `gorm:"type:uuid" json:"campaign_id,omitempty"`
 	CreatedAt   time.Time  `json:"created_at"`

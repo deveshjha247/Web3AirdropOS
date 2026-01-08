@@ -1,12 +1,15 @@
 package services
 
 import (
+	"encoding/json"
 	"errors"
 	"time"
 
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 
 	"github.com/web3airdropos/backend/internal/models"
+	"github.com/web3airdropos/backend/internal/websocket"
 )
 
 type AccountService struct {

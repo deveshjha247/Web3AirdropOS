@@ -58,61 +58,89 @@ func (s *DashboardService) GetStats(userID uuid.UUID) (*DashboardStats, error) {
 	stats := &DashboardStats{}
 
 	// Wallet stats
-	s.container.DB.Model(&models.Wallet{}).Where("user_id = ?", userID).Count(&[]int64{stats.TotalWallets}[0])
-	s.container.DB.Model(&models.Wallet{}).Where("user_id = ? AND type = ?", userID, models.WalletTypeEVM).Count(&[]int64{stats.EVMWallets}[0])
-	s.container.DB.Model(&models.Wallet{}).Where("user_id = ? AND type = ?", userID, models.WalletTypeSolana).Count(&[]int64{stats.SolanaWallets}[0])
+	var totalWallets, evmWallets, solanaWallets int64
+	s.container.DB.Model(&models.Wallet{}).Where("user_id = ?", userID).Count(&totalWallets)
+	s.container.DB.Model(&models.Wallet{}).Where("user_id = ? AND type = ?", userID, models.WalletTypeEVM).Count(&evmWallets)
+	s.container.DB.Model(&models.Wallet{}).Where("user_id = ? AND type = ?", userID, models.WalletTypeSolana).Count(&solanaWallets)
+	stats.TotalWallets = int(totalWallets)
+	stats.EVMWallets = int(evmWallets)
+	stats.SolanaWallets = int(solanaWallets)
 
 	// Account stats
-	s.container.DB.Model(&models.PlatformAccount{}).Where("user_id = ?", userID).Count(&[]int64{stats.TotalAccounts}[0])
-	s.container.DB.Model(&models.PlatformAccount{}).Where("user_id = ? AND platform = ?", userID, models.PlatformFarcaster).Count(&[]int64{stats.FarcasterAccounts}[0])
-	s.container.DB.Model(&models.PlatformAccount{}).Where("user_id = ? AND platform = ?", userID, models.PlatformTwitter).Count(&[]int64{stats.TwitterAccounts}[0])
-	s.container.DB.Model(&models.PlatformAccount{}).Where("user_id = ? AND platform = ?", userID, models.PlatformDiscord).Count(&[]int64{stats.DiscordAccounts}[0])
-	s.container.DB.Model(&models.PlatformAccount{}).Where("user_id = ? AND platform = ?", userID, models.PlatformTelegram).Count(&[]int64{stats.TelegramAccounts}[0])
+	var totalAccounts, farcasterAccounts, twitterAccounts, discordAccounts, telegramAccounts int64
+	s.container.DB.Model(&models.PlatformAccount{}).Where("user_id = ?", userID).Count(&totalAccounts)
+	s.container.DB.Model(&models.PlatformAccount{}).Where("user_id = ? AND platform = ?", userID, models.PlatformFarcaster).Count(&farcasterAccounts)
+	s.container.DB.Model(&models.PlatformAccount{}).Where("user_id = ? AND platform = ?", userID, models.PlatformTwitter).Count(&twitterAccounts)
+	s.container.DB.Model(&models.PlatformAccount{}).Where("user_id = ? AND platform = ?", userID, models.PlatformDiscord).Count(&discordAccounts)
+	s.container.DB.Model(&models.PlatformAccount{}).Where("user_id = ? AND platform = ?", userID, models.PlatformTelegram).Count(&telegramAccounts)
+	stats.TotalAccounts = int(totalAccounts)
+	stats.FarcasterAccounts = int(farcasterAccounts)
+	stats.TwitterAccounts = int(twitterAccounts)
+	stats.DiscordAccounts = int(discordAccounts)
+	stats.TelegramAccounts = int(telegramAccounts)
 
 	// Campaign stats
-	s.container.DB.Model(&models.Campaign{}).Where("user_id = ? AND status = ?", userID, "active").Count(&[]int64{stats.ActiveCampaigns}[0])
-	s.container.DB.Model(&models.Campaign{}).Where("user_id = ? AND status = ?", userID, "completed").Count(&[]int64{stats.CompletedCampaigns}[0])
+	var activeCampaigns, completedCampaigns int64
+	s.container.DB.Model(&models.Campaign{}).Where("user_id = ? AND status = ?", userID, "active").Count(&activeCampaigns)
+	s.container.DB.Model(&models.Campaign{}).Where("user_id = ? AND status = ?", userID, "completed").Count(&completedCampaigns)
+	stats.ActiveCampaigns = int(activeCampaigns)
+	stats.CompletedCampaigns = int(completedCampaigns)
 
 	// Task stats from campaigns
+	var totalTasks, completedTasks, pendingTasks int64
 	s.container.DB.Model(&models.CampaignTask{}).
 		Joins("JOIN campaigns ON campaign_tasks.campaign_id = campaigns.id").
 		Where("campaigns.user_id = ?", userID).
-		Count(&[]int64{stats.TotalTasks}[0])
+		Count(&totalTasks)
+	stats.TotalTasks = int(totalTasks)
 
 	s.container.DB.Model(&models.TaskExecution{}).
 		Joins("JOIN campaign_tasks ON task_executions.task_id = campaign_tasks.id").
 		Joins("JOIN campaigns ON campaign_tasks.campaign_id = campaigns.id").
 		Where("campaigns.user_id = ? AND task_executions.status = ?", userID, "completed").
-		Count(&[]int64{stats.CompletedTasks}[0])
+		Count(&completedTasks)
+	stats.CompletedTasks = int(completedTasks)
 
 	s.container.DB.Model(&models.TaskExecution{}).
 		Joins("JOIN campaign_tasks ON task_executions.task_id = campaign_tasks.id").
 		Joins("JOIN campaigns ON campaign_tasks.campaign_id = campaigns.id").
 		Where("campaigns.user_id = ? AND task_executions.status IN ?", userID, []string{"pending", "in_progress", "waiting_manual"}).
-		Count(&[]int64{stats.PendingTasks}[0])
+		Count(&pendingTasks)
+	stats.PendingTasks = int(pendingTasks)
 
 	// Job stats
-	s.container.DB.Model(&models.AutomationJob{}).Where("user_id = ? AND is_active = ?", userID, true).Count(&[]int64{stats.ActiveJobs}[0])
-	s.container.DB.Model(&models.AutomationJob{}).Where("user_id = ? AND status = ?", userID, "running").Count(&[]int64{stats.RunningJobs}[0])
+	var activeJobs, runningJobs int64
+	s.container.DB.Model(&models.AutomationJob{}).Where("user_id = ? AND is_active = ?", userID, true).Count(&activeJobs)
+	s.container.DB.Model(&models.AutomationJob{}).Where("user_id = ? AND status = ?", userID, "running").Count(&runningJobs)
+	stats.ActiveJobs = int(activeJobs)
+	stats.RunningJobs = int(runningJobs)
 
 	// Browser sessions
-	s.container.DB.Model(&models.BrowserSession{}).Where("user_id = ? AND status != ?", userID, "stopped").Count(&[]int64{stats.ActiveSessions}[0])
+	var activeSessions int64
+	s.container.DB.Model(&models.BrowserSession{}).Where("user_id = ? AND status != ?", userID, "stopped").Count(&activeSessions)
+	stats.ActiveSessions = int(activeSessions)
 
 	// Content stats
-	s.container.DB.Model(&models.ContentDraft{}).Where("user_id = ? AND status = ?", userID, "draft").Count(&[]int64{stats.PendingDrafts}[0])
-	s.container.DB.Model(&models.ScheduledPost{}).Where("user_id = ? AND status = ?", userID, "pending").Count(&[]int64{stats.ScheduledPosts}[0])
+	var pendingDrafts, scheduledPosts int64
+	s.container.DB.Model(&models.ContentDraft{}).Where("user_id = ? AND status = ?", userID, "draft").Count(&pendingDrafts)
+	s.container.DB.Model(&models.ScheduledPost{}).Where("user_id = ? AND status = ?", userID, "pending").Count(&scheduledPosts)
+	stats.PendingDrafts = int(pendingDrafts)
+	stats.ScheduledPosts = int(scheduledPosts)
 
 	// Today's activity
 	today := time.Now().Truncate(24 * time.Hour)
+	var todayTransactions, todayPosts int64
 	s.container.DB.Model(&models.Transaction{}).
 		Joins("JOIN wallets ON transactions.wallet_id = wallets.id").
 		Where("wallets.user_id = ? AND transactions.created_at >= ?", userID, today).
-		Count(&[]int64{stats.TodayTransactions}[0])
+		Count(&todayTransactions)
+	stats.TodayTransactions = int(todayTransactions)
 
 	s.container.DB.Model(&models.AccountActivity{}).
 		Joins("JOIN platform_accounts ON account_activities.account_id = platform_accounts.id").
 		Where("platform_accounts.user_id = ? AND account_activities.created_at >= ? AND account_activities.type = ?", userID, today, "post").
-		Count(&[]int64{stats.TodayPosts}[0])
+		Count(&todayPosts)
+	stats.TodayPosts = int(todayPosts)
 
 	// Weekly activity
 	stats.WeeklyActivity = make([]int, 7)
