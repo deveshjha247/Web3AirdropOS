@@ -88,9 +88,9 @@ func (c *Container) registerPlatformAdapters(cfg *config.Config) {
 	// Twitter (skeleton - requires API access)
 	if cfg.TwitterBearerToken != "" {
 		twitterAdapter, err := platforms.NewTwitterClient(&platforms.AccountCredentials{
-			APIKey:    cfg.TwitterAPIKey,
-			APISecret: cfg.TwitterSecret,
-			Token:     cfg.TwitterBearerToken,
+			APIKey:      cfg.TwitterAPIKey,
+			APISecret:   cfg.TwitterSecret,
+			AccessToken: cfg.TwitterBearerToken,
 		})
 		if err == nil {
 			c.Task.RegisterAdapter("twitter", twitterAdapter)

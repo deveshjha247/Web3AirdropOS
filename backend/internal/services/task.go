@@ -332,7 +332,7 @@ func (s *TaskService) executeWalletConnect(userID uuid.UUID, task *models.Campai
 	})
 
 	// Update execution to pending - requires user interaction in browser
-	execution.Status = models.TaskStatusPending
+	execution.Status = "pending"
 	execution.ErrorMessage = "Awaiting wallet connection in browser"
 	s.container.DB.Save(execution)
 
@@ -369,7 +369,7 @@ func (s *TaskService) executeTransaction(userID uuid.UUID, task *models.Campaign
 	}
 
 	// Update execution to pending - requires signature
-	execution.Status = models.TaskStatusPending
+	execution.Status = "pending"
 	execution.ErrorMessage = "Awaiting transaction signature in browser"
 	s.container.DB.Save(execution)
 
@@ -429,7 +429,7 @@ func (s *TaskService) executeFollowWithAdapter(ctx context.Context, userID uuid.
 	})
 
 	// Acquire account lock (one action at a time per account)
-	lock, err := s.rateLimiter.AccountLock(ctx, execution.AccountID.String(), "follow")
+	lock, err := s.rateLimiter.AccountLock(ctx, *execution.AccountID, 30*time.Second)
 	if err != nil {
 		return nil, fmt.Errorf("could not acquire account lock: %w", err)
 	}
@@ -499,14 +499,14 @@ func (s *TaskService) executePostWithAdapter(ctx context.Context, userID uuid.UU
 	})
 
 	// Acquire account lock
-	lock, err := s.rateLimiter.AccountLock(ctx, execution.AccountID.String(), "post")
+	lock, err := s.rateLimiter.AccountLock(ctx, *execution.AccountID, 30*time.Second)
 	if err != nil {
 		return nil, fmt.Errorf("could not acquire account lock: %w", err)
 	}
 	defer lock.Release(ctx)
 
 	// Execute via adapter
-	return adapter.Post(ctx, content)
+	return adapter.Post(ctx, &platforms.PostContent{Text: content})
 }
 
 func (s *TaskService) executeReply(userID uuid.UUID, task *models.CampaignTask, execution *models.TaskExecution) error {
@@ -530,7 +530,7 @@ func (s *TaskService) executeReplyWithAdapter(ctx context.Context, userID uuid.U
 	}
 
 	// Acquire account lock
-	lock, err := s.rateLimiter.AccountLock(ctx, execution.AccountID.String(), "reply")
+	lock, err := s.rateLimiter.AccountLock(ctx, *execution.AccountID, 30*time.Second)
 	if err != nil {
 		return nil, fmt.Errorf("could not acquire account lock: %w", err)
 	}
@@ -563,7 +563,7 @@ func (s *TaskService) executeLikeWithAdapter(ctx context.Context, userID uuid.UU
 	})
 
 	// Acquire account lock
-	lock, err := s.rateLimiter.AccountLock(ctx, execution.AccountID.String(), "like")
+	lock, err := s.rateLimiter.AccountLock(ctx, *execution.AccountID, 30*time.Second)
 	if err != nil {
 		return nil, fmt.Errorf("could not acquire account lock: %w", err)
 	}
@@ -595,7 +595,7 @@ func (s *TaskService) executeRecastWithAdapter(ctx context.Context, userID uuid.
 	})
 
 	// Acquire account lock
-	lock, err := s.rateLimiter.AccountLock(ctx, execution.AccountID.String(), "recast")
+	lock, err := s.rateLimiter.AccountLock(ctx, *execution.AccountID, 30*time.Second)
 	if err != nil {
 		return nil, fmt.Errorf("could not acquire account lock: %w", err)
 	}
