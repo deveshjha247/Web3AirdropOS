@@ -1155,3 +1155,205 @@ func (s *Scheduler) executeTransaction(ctx context.Context, userID uuid.UUID, ta
 
 	return fmt.Errorf("transaction requires manual approval")
 }
+
+// fetchWalletBalance fetches the balance for a wallet from the appropriate RPC
+func (s *Scheduler) fetchWalletBalance(ctx context.Context, wallet *models.Wallet) (string, error) {
+	client := &http.Client{Timeout: 15 * time.Second}
+
+	switch wallet.Type {
+	case "evm":
+		// Use Ethereum JSON-RPC to get balance
+		rpcURL := s.config.EthereumRPCURL
+		if rpcURL == "" {
+			rpcURL = "https://eth.llamarpc.com" // Public fallback
+		}
+
+		payload := map[string]interface{}{
+			"jsonrpc": "2.0",
+			"method":  "eth_getBalance",
+			"params":  []interface{}{wallet.Address, "latest"},
+			"id":      1,
+		}
+		payloadBytes, _ := json.Marshal(payload)
+
+		req, err := http.NewRequestWithContext(ctx, "POST", rpcURL, bytes.NewReader(payloadBytes))
+		if err != nil {
+			return "", err
+		}
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := client.Do(req)
+		if err != nil {
+			return "", err
+		}
+		defer resp.Body.Close()
+
+		var rpcResp struct {
+			Result string `json:"result"`
+			Error  *struct {
+				Message string `json:"message"`
+			} `json:"error"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&rpcResp); err != nil {
+			return "", err
+		}
+		if rpcResp.Error != nil {
+			return "", fmt.Errorf("rpc error: %s", rpcResp.Error.Message)
+		}
+
+		return rpcResp.Result, nil
+
+	case "solana":
+		// Use Solana JSON-RPC to get balance
+		rpcURL := s.config.SolanaRPCURL
+		if rpcURL == "" {
+			rpcURL = "https://api.mainnet-beta.solana.com"
+		}
+
+		payload := map[string]interface{}{
+			"jsonrpc": "2.0",
+			"method":  "getBalance",
+			"params":  []interface{}{wallet.Address},
+			"id":      1,
+		}
+		payloadBytes, _ := json.Marshal(payload)
+
+		req, err := http.NewRequestWithContext(ctx, "POST", rpcURL, bytes.NewReader(payloadBytes))
+		if err != nil {
+			return "", err
+		}
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := client.Do(req)
+		if err != nil {
+			return "", err
+		}
+		defer resp.Body.Close()
+
+		var rpcResp struct {
+			Result struct {
+				Value uint64 `json:"value"`
+			} `json:"result"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&rpcResp); err != nil {
+			return "", err
+		}
+
+		return fmt.Sprintf("%d", rpcResp.Result.Value), nil
+
+	default:
+		return "", fmt.Errorf("unsupported wallet type: %s", wallet.Type)
+	}
+}
+
+// syncAccountFromPlatform syncs account data from the respective platform API
+func (s *Scheduler) syncAccountFromPlatform(ctx context.Context, account *models.PlatformAccount) error {
+	client := &http.Client{Timeout: 30 * time.Second}
+
+	switch account.Platform {
+	case "farcaster":
+		if s.config.NeynarAPIKey == "" {
+			return fmt.Errorf("NEYNAR_API_KEY not configured")
+		}
+
+		// Fetch user data from Neynar
+		url := fmt.Sprintf("https://api.neynar.com/v2/farcaster/user/bulk?fids=%s", account.PlatformUserID)
+		req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+		if err != nil {
+			return err
+		}
+		req.Header.Set("api_key", s.config.NeynarAPIKey)
+
+		resp, err := client.Do(req)
+		if err != nil {
+			return err
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			return fmt.Errorf("neynar api error: status %d", resp.StatusCode)
+		}
+
+		var neynarResp struct {
+			Users []struct {
+				Username       string `json:"username"`
+				DisplayName    string `json:"display_name"`
+				FollowerCount  int    `json:"follower_count"`
+				FollowingCount int    `json:"following_count"`
+				ProfileImage   string `json:"pfp_url"`
+			} `json:"users"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&neynarResp); err != nil {
+			return err
+		}
+
+		if len(neynarResp.Users) > 0 {
+			user := neynarResp.Users[0]
+			s.db.Model(account).Updates(map[string]interface{}{
+				"username":         user.Username,
+				"display_name":     user.DisplayName,
+				"followers":        user.FollowerCount,
+				"following":        user.FollowingCount,
+				"profile_image":    user.ProfileImage,
+				"last_activity_at": time.Now(),
+			})
+		}
+
+	case "twitter":
+		// Twitter API sync - requires bearer token
+		if s.config.TwitterBearerToken == "" {
+			return fmt.Errorf("TWITTER_BEARER_TOKEN not configured")
+		}
+
+		url := fmt.Sprintf("https://api.twitter.com/2/users/%s?user.fields=public_metrics,profile_image_url", account.PlatformUserID)
+		req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+		if err != nil {
+			return err
+		}
+		req.Header.Set("Authorization", "Bearer "+s.config.TwitterBearerToken)
+
+		resp, err := client.Do(req)
+		if err != nil {
+			return err
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			return fmt.Errorf("twitter api error: status %d", resp.StatusCode)
+		}
+
+		var twitterResp struct {
+			Data struct {
+				Username      string `json:"username"`
+				Name          string `json:"name"`
+				PublicMetrics struct {
+					FollowersCount int `json:"followers_count"`
+					FollowingCount int `json:"following_count"`
+				} `json:"public_metrics"`
+				ProfileImageURL string `json:"profile_image_url"`
+			} `json:"data"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&twitterResp); err != nil {
+			return err
+		}
+
+		s.db.Model(account).Updates(map[string]interface{}{
+			"username":         twitterResp.Data.Username,
+			"display_name":     twitterResp.Data.Name,
+			"followers":        twitterResp.Data.PublicMetrics.FollowersCount,
+			"following":        twitterResp.Data.PublicMetrics.FollowingCount,
+			"profile_image":    twitterResp.Data.ProfileImageURL,
+			"last_activity_at": time.Now(),
+		})
+
+	case "telegram":
+		// Telegram doesn't have a user sync API in the same way
+		// Just update the last activity timestamp
+		s.db.Model(account).Update("last_activity_at", time.Now())
+
+	default:
+		return fmt.Errorf("unsupported platform: %s", account.Platform)
+	}
+
+	return nil
+}
