@@ -1,10 +1,14 @@
 package api
 
 import (
+	"context"
+	"errors"
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/go-redis/redis/v8"
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 
 	"github.com/web3airdropos/backend/internal/api/handlers"
@@ -94,12 +98,18 @@ func (s *ProductionServer) requestLogger() gin.HandlerFunc {
 	})
 }
 
-// corsMiddleware handles CORS
+// corsMiddleware handles CORS with configurable origin
 func (s *ProductionServer) corsMiddleware() gin.HandlerFunc {
+	origin := s.container.Config.CORSOrigin
+	if origin == "" {
+		origin = "*"
+	}
+
 	return func(c *gin.Context) {
-		c.Header("Access-Control-Allow-Origin", "*") // Configure for production
-		c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-		c.Header("Access-Control-Allow-Headers", "Origin, Content-Type, Authorization")
+		c.Header("Access-Control-Allow-Origin", origin)
+		c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS, PATCH")
+		c.Header("Access-Control-Allow-Headers", "Origin, Content-Type, Authorization, X-Requested-With")
+		c.Header("Access-Control-Allow-Credentials", "true")
 		c.Header("Access-Control-Max-Age", "86400")
 
 		if c.Request.Method == "OPTIONS" {
@@ -144,14 +154,8 @@ func (s *ProductionServer) authRequired() gin.HandlerFunc {
 
 // setupRoutes configures all API routes
 func (s *ProductionServer) setupRoutes() {
-	// Health check (public)
-	s.router.GET("/health", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{
-			"status":  "healthy",
-			"service": "web3airdropos-backend",
-			"version": "1.0.0",
-		})
-	})
+	// Health check (public) with dependency verification
+	s.router.GET("/health", s.healthCheck())
 
 	// API v1 routes
 	v1 := s.router.Group("/api/v1")
@@ -171,10 +175,7 @@ func (s *ProductionServer) setupRoutes() {
 		protected.Use(s.authRequired())
 		{
 			// Account logout
-			protected.POST("/auth/logout", func(c *gin.Context) {
-				// Handle logout
-				c.JSON(http.StatusOK, gin.H{"message": "logged out"})
-			})
+			protected.POST("/auth/logout", s.logout())
 
 			// Wallet routes
 			wallets := protected.Group("/wallets")
@@ -363,8 +364,32 @@ func (s *ProductionServer) getAuditLogs() gin.HandlerFunc {
 
 func (s *ProductionServer) getAuditLog() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// Implementation
-		c.JSON(http.StatusOK, gin.H{})
+		userID, _ := auth.GetUserID(c)
+		logIDStr := c.Param("id")
+
+		logID, err := uuid.Parse(logIDStr)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid audit log ID"})
+			return
+		}
+
+		logEntry, err := s.container.AuditLogger.GetByID(c.Request.Context(), logID)
+		if err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				c.JSON(http.StatusNotFound, gin.H{"error": "audit log not found"})
+				return
+			}
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+
+		// Security: Ensure user can only access their own audit logs
+		if logEntry.UserID != userID {
+			c.JSON(http.StatusForbidden, gin.H{"error": "access denied"})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{"log": logEntry})
 	}
 }
 
@@ -488,5 +513,93 @@ func (s *ProductionServer) deleteSecret() gin.HandlerFunc {
 		})
 
 		c.JSON(http.StatusOK, gin.H{"message": "secret deleted"})
+	}
+}
+
+// healthCheck performs health check with dependency verification
+func (s *ProductionServer) healthCheck() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		status := gin.H{
+			"status":  "healthy",
+			"service": "web3airdropos-backend",
+			"version": "1.0.0",
+			"timestamp": time.Now().UTC(),
+		}
+
+		checks := make(map[string]string)
+		allHealthy := true
+
+		// Check database
+		if s.container.DB != nil {
+			sqlDB, err := s.container.DB.DB()
+			if err == nil {
+				ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+				defer cancel()
+				if err := sqlDB.PingContext(ctx); err != nil {
+					checks["database"] = "unhealthy: " + err.Error()
+					allHealthy = false
+				} else {
+					checks["database"] = "healthy"
+				}
+			} else {
+				checks["database"] = "unhealthy: " + err.Error()
+				allHealthy = false
+			}
+		} else {
+			checks["database"] = "not configured"
+			allHealthy = false
+		}
+
+		// Check Redis
+		if s.container.Redis != nil {
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			defer cancel()
+			if err := s.container.Redis.Ping(ctx).Err(); err != nil {
+				checks["redis"] = "unhealthy: " + err.Error()
+				allHealthy = false
+			} else {
+				checks["redis"] = "healthy"
+			}
+		} else {
+			checks["redis"] = "not configured (optional)"
+		}
+
+		status["checks"] = checks
+
+		if !allHealthy {
+			status["status"] = "degraded"
+			c.JSON(http.StatusServiceUnavailable, status)
+			return
+		}
+
+		c.JSON(http.StatusOK, status)
+	}
+}
+
+// logout handles user logout by revoking all refresh tokens
+func (s *ProductionServer) logout() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		userID, exists := auth.GetUserID(c)
+		if !exists {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+			return
+		}
+
+		// Revoke all tokens for the user
+		if err := s.container.AuthService.Logout(c.Request.Context(), userID); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+
+		// Log audit event
+		s.container.AuditLogger.Log(c.Request.Context(), &audit.LogEntry{
+			UserID:   userID,
+			Action:   audit.ActionLogout,
+			Result:   audit.ResultSuccess,
+			IPAddress: c.ClientIP(),
+			UserAgent: c.GetHeader("User-Agent"),
+		})
+
+		c.JSON(http.StatusOK, gin.H{"message": "logged out successfully"})
 	}
 }

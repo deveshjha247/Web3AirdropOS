@@ -12,6 +12,7 @@ type Config struct {
 	// Security
 	JWTSecret     string
 	EncryptionKey string
+	CORSOrigin    string
 
 	// Internal Services
 	AIServiceURL string
@@ -47,6 +48,7 @@ func Load() *Config {
 		// Security
 		JWTSecret:     getEnv("JWT_SECRET", "your-secret-key-change-in-production"),
 		EncryptionKey: getEnv("ENCRYPTION_KEY", "32-byte-key-for-wallet-encryption"),
+		CORSOrigin:    getEnv("CORS_ORIGIN", "*"),
 
 		// Internal Services
 		AIServiceURL: getEnv("AI_SERVICE_URL", "http://localhost:8001"),
