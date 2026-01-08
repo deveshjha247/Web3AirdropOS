@@ -214,14 +214,18 @@ func (s *DashboardService) GetRecentActivity(userID uuid.UUID, limit int) ([]Rec
 	for _, te := range taskExecutions {
 		status := string(te.Status)
 		title := "Task execution"
-		if te.Task.Name != "" {
-			title = te.Task.Name
+		description := "task"
+		if te.Task != nil {
+			if te.Task.Name != "" {
+				title = te.Task.Name
+			}
+			description = string(te.Task.Type) + " task on " + te.Task.TargetPlatform
 		}
 		activities = append(activities, RecentActivity{
 			ID:          te.ID,
 			Type:        "task",
 			Title:       title,
-			Description: string(te.Task.Type) + " task on " + te.Task.TargetPlatform,
+			Description: description,
 			Status:      status,
 			Timestamp:   te.CreatedAt,
 		})

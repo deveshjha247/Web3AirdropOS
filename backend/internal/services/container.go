@@ -11,23 +11,23 @@ import (
 
 // Container holds all service instances
 type Container struct {
-	Config     *config.Config
-	DB         *gorm.DB
-	Redis      *redis.Client
-	WSHub      *websocket.Hub
-	
+	Config *config.Config
+	DB     *gorm.DB
+	Redis  *redis.Client
+	WSHub  *websocket.Hub
+
 	// Core Services
-	Auth        *AuthService
-	Wallet      *WalletService
-	Account     *AccountService
-	Campaign    *CampaignService
-	Task        *TaskService
-	Browser     *BrowserService
-	Content     *ContentService
-	Job         *JobService
-	Proxy       *ProxyService
-	Dashboard   *DashboardService
-	
+	Auth      *AuthService
+	Wallet    *WalletService
+	Account   *AccountService
+	Campaign  *CampaignService
+	Task      *TaskService
+	Browser   *BrowserService
+	Content   *ContentService
+	Job       *JobService
+	Proxy     *ProxyService
+	Dashboard *DashboardService
+
 	// Production Services
 	RateLimiter *RateLimiter
 	Audit       *AuditService
@@ -67,18 +67,34 @@ func NewContainer(cfg *config.Config, db *gorm.DB, redis *redis.Client, wsHub *w
 func (c *Container) registerPlatformAdapters(cfg *config.Config) {
 	// Farcaster (Neynar)
 	if cfg.NeynarAPIKey != "" {
-		farcasterAdapter := platforms.NewFarcasterClient(cfg.NeynarAPIKey)
-		c.Task.RegisterAdapter("farcaster", farcasterAdapter)
+		farcasterAdapter, err := platforms.NewFarcasterClient(&platforms.AccountCredentials{
+			APIKey: cfg.NeynarAPIKey,
+		})
+		if err == nil {
+			c.Task.RegisterAdapter("farcaster", farcasterAdapter)
+		}
 	}
 
 	// Telegram
 	if cfg.TelegramBotToken != "" {
-		telegramAdapter := platforms.NewTelegramClient(cfg.TelegramBotToken)
-		c.Task.RegisterAdapter("telegram", telegramAdapter)
+		telegramAdapter, err := platforms.NewTelegramClient(&platforms.AccountCredentials{
+			APIKey: cfg.TelegramBotToken,
+		})
+		if err == nil {
+			c.Task.RegisterAdapter("telegram", telegramAdapter)
+		}
 	}
 
 	// Twitter (skeleton - requires API access)
-	twitterAdapter := platforms.NewTwitterClient("", "", "", "")
-	c.Task.RegisterAdapter("twitter", twitterAdapter)
-	c.Task.RegisterAdapter("x", twitterAdapter)
+	if cfg.TwitterBearerToken != "" {
+		twitterAdapter, err := platforms.NewTwitterClient(&platforms.AccountCredentials{
+			APIKey:    cfg.TwitterAPIKey,
+			APISecret: cfg.TwitterSecret,
+			Token:     cfg.TwitterBearerToken,
+		})
+		if err == nil {
+			c.Task.RegisterAdapter("twitter", twitterAdapter)
+			c.Task.RegisterAdapter("x", twitterAdapter)
+		}
+	}
 }

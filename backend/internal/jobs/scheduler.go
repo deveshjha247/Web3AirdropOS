@@ -855,18 +855,18 @@ func (s *Scheduler) handleBulkExecute(ctx context.Context, jctx *JobContext, sch
 					execution := &models.TaskExecution{
 						TaskID:    t.ID,
 						AccountID: &accID,
-						Status:    models.TaskStatusRunning,
-						StartedAt: func() *time.Time { t := time.Now(); return &t }(),
+						Status:    "running",
+						StartedAt: time.Now(),
 					}
 					s.db.Create(execution)
 
 					// Execute the task
 					var execErr error
 					switch t.Type {
-					case "follow", "like", "recast", "reply":
+					case models.TaskTypeFollow, models.TaskTypeLike, models.TaskTypeRecast, models.TaskTypeReply:
 						var account models.PlatformAccount
 						if err := s.db.First(&account, accID).Error; err == nil {
-							execErr = s.executeSocialAction(ctx, &account, string(t.Type), t.TargetURL)
+							execErr = s.executeDirectSocialAction(ctx, &account, string(t.Type), t.TargetURL)
 						}
 					default:
 						// Other task types
@@ -880,11 +880,11 @@ func (s *Scheduler) handleBulkExecute(ctx context.Context, jctx *JobContext, sch
 					mu.Lock()
 					if execErr != nil {
 						failedCount++
-						execution.Status = models.TaskStatusFailed
+						execution.Status = "failed"
 						execution.ErrorMessage = execErr.Error()
 					} else {
 						completedCount++
-						execution.Status = models.TaskStatusCompleted
+						execution.Status = "completed"
 					}
 					mu.Unlock()
 
@@ -999,6 +999,18 @@ func (s *Scheduler) publishToTelegram(account *models.PlatformAccount, content s
 	}
 
 	return fmt.Sprintf("https://t.me/c/%s/%d", account.PlatformUserID, result.Result.MessageID), nil
+}
+
+// executeDirectSocialAction executes a social action directly with an account (for engagement automation)
+func (s *Scheduler) executeDirectSocialAction(ctx context.Context, account *models.PlatformAccount, action, target string) error {
+	switch account.Platform {
+	case models.PlatformFarcaster:
+		return s.executeFarcasterAction(account, action, target, "", nil)
+	case models.PlatformTelegram:
+		return s.executeTelegramAction(account, action, target, "", nil)
+	default:
+		return fmt.Errorf("platform %s not supported for direct social actions", account.Platform)
+	}
 }
 
 // executeSocialAction executes a social media action

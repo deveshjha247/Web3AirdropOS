@@ -296,7 +296,7 @@ func (s *AccountService) syncFarcaster(account *models.PlatformAccount) error {
 
 func (s *AccountService) syncTwitter(account *models.PlatformAccount) error {
 	// Twitter API v2 sync - requires bearer token
-	if s.container.Config.TwitterBearer == "" {
+	if s.container.Config.TwitterBearerToken == "" {
 		return fmt.Errorf("TWITTER_BEARER_TOKEN not configured")
 	}
 
@@ -307,7 +307,7 @@ func (s *AccountService) syncTwitter(account *models.PlatformAccount) error {
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Authorization", "Bearer "+s.container.Config.TwitterBearer)
+	req.Header.Set("Authorization", "Bearer "+s.container.Config.TwitterBearerToken)
 
 	resp, err := client.Do(req)
 	if err != nil {
