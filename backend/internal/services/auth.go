@@ -149,7 +149,7 @@ func (s *AuthService) RefreshToken(refreshToken string) (*AuthResponse, error) {
 
 	// Use production auth if available
 	if s.productionAuth != nil {
-		result, err := s.productionAuth.RefreshToken(ctx, refreshToken)
+		result, err := s.productionAuth.RefreshToken(ctx, refreshToken, "", "")
 		if err != nil {
 			return nil, err
 		}
