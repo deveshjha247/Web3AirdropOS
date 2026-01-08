@@ -1,8 +1,8 @@
 # Web3AirdropOS
 
-> ALL-IN-ONE CRYPTO AUTOMATION + OPERATIONS SYSTEM
+> **PRODUCTION-GRADE CRYPTO AUTOMATION + OPERATIONS SYSTEM**
 
-A comprehensive platform for managing multi-wallet operations, multi-platform social accounts, airdrop campaigns, and automated tasks - all from a single dashboard.
+A comprehensive platform for managing multi-wallet operations, multi-platform social accounts, airdrop campaigns, and automated tasks - all from a single dashboard with **real platform integrations, rate limiting, audit logging, and approval workflows**.
 
 ## 🚀 Features
 
@@ -11,20 +11,25 @@ A comprehensive platform for managing multi-wallet operations, multi-platform so
 - **Groups & Tags**: Organize wallets with custom groups and tags
 - **Campaign Linking**: Assign specific wallets to campaigns
 - **Balance Sync**: Real-time balance tracking
+- **Wallet Locking**: One transaction at a time per wallet (safety)
 
 ### Multi-Account/Multi-Platform Control
 - **Platform Support**: Farcaster, X (Twitter), Telegram, Discord
+- **Real API Integrations**: Direct platform APIs (Neynar, Telegram Bot API)
+- **Account Locking**: One action at a time per account (safety)
 - **Account Linking**: Connect social accounts to wallets
-- **Unified Management**: Single dashboard for all platforms
 
 ### Embedded Browser Workspace
 - **Real Browser**: Full Chromium browser in dashboard
+- **Session Lifecycle**: Create → Attach Task → Pause/Resume → Kill
 - **Manual Takeover**: Take control when automation gets stuck
+- **Screenshot Proofs**: Auto-capture for task verification
 - **VNC Integration**: Remote desktop-style interaction
 - **Profile Isolation**: Separate browser profiles with proxy support
 
 ### AI-Powered Content Generation
 - **Platform-Optimized**: Content tailored for each platform
+- **Approve-First Workflow**: Draft → Approval → Publish
 - **Tone Selection**: Professional, casual, witty, engaging
 - **Thread Generation**: Multi-part content creation
 - **Engagement Plans**: AI-generated weekly strategies
@@ -32,8 +37,16 @@ A comprehensive platform for managing multi-wallet operations, multi-platform so
 ### Airdrop Campaign Farming
 - **Multi-Platform**: Galxe, Zealy, Layer3, Intract support
 - **Bulk Execution**: Run tasks across multiple wallets
+- **Task Idempotency**: Prevents duplicate executions
+- **Proof System**: Records post URLs, tx hashes, screenshots
 - **Progress Tracking**: Real-time campaign progress
 - **Manual Continue**: Resume tasks that need interaction
+
+### Production-Grade Safety Features
+- **Rate Limiting**: Per-platform limits (Farcaster: 20/min, Telegram: 25/sec)
+- **Distributed Locks**: Redis-based account/wallet locking
+- **Audit Logging**: Complete action history with proofs
+- **Idempotency Keys**: Prevents accidental duplicate actions
 
 ### Real-Time Terminal Console
 - **Live Logs**: WebSocket-powered real-time updates
