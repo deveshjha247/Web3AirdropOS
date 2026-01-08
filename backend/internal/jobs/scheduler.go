@@ -1,10 +1,13 @@
 package jobs
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
+	"net/http"
 	"sync"
 	"time"
 
@@ -678,4 +681,243 @@ func (s *Scheduler) PublishToRedis(jobID, userID uuid.UUID) error {
 		"user_id": userID.String(),
 	})
 	return s.redis.Publish(ctx, "jobs:queue", string(payload)).Err()
+}
+
+// publishToFarcaster publishes content to Farcaster via Neynar
+func (s *Scheduler) publishToFarcaster(account *models.PlatformAccount, content string) (string, error) {
+	if s.config.NeynarAPIKey == "" {
+		return "", fmt.Errorf("NEYNAR_API_KEY not configured")
+	}
+
+	// Post via Neynar API
+	client := &http.Client{Timeout: 30 * time.Second}
+
+	payload := map[string]interface{}{
+		"signer_uuid": account.PlatformUserID,
+		"text":        content,
+	}
+	payloadBytes, _ := json.Marshal(payload)
+
+	req, err := http.NewRequest("POST", "https://api.neynar.com/v2/farcaster/cast", bytes.NewBuffer(payloadBytes))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("api_key", s.config.NeynarAPIKey)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("neynar API error: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+		body, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("neynar API error: %s", string(body))
+	}
+
+	var result struct {
+		Cast struct {
+			Hash string `json:"hash"`
+		} `json:"cast"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", err
+	}
+
+	return fmt.Sprintf("https://warpcast.com/%s/%s", account.Username, result.Cast.Hash), nil
+}
+
+// publishToTelegram publishes content to Telegram
+func (s *Scheduler) publishToTelegram(account *models.PlatformAccount, content string) (string, error) {
+	if s.config.TelegramBotToken == "" {
+		return "", fmt.Errorf("TELEGRAM_BOT_TOKEN not configured")
+	}
+
+	// Send message via Telegram Bot API
+	client := &http.Client{Timeout: 30 * time.Second}
+
+	url := fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage", s.config.TelegramBotToken)
+	payload := map[string]interface{}{
+		"chat_id": account.PlatformUserID,
+		"text":    content,
+	}
+	payloadBytes, _ := json.Marshal(payload)
+
+	resp, err := client.Post(url, "application/json", bytes.NewBuffer(payloadBytes))
+	if err != nil {
+		return "", fmt.Errorf("telegram API error: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("telegram API error: %s", string(body))
+	}
+
+	var result struct {
+		Result struct {
+			MessageID int `json:"message_id"`
+		} `json:"result"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", err
+	}
+
+	return fmt.Sprintf("https://t.me/c/%s/%d", account.PlatformUserID, result.Result.MessageID), nil
+}
+
+// executeSocialAction executes a social media action
+func (s *Scheduler) executeSocialAction(ctx context.Context, userID uuid.UUID, task *models.CampaignTask, execution *models.TaskExecution) error {
+	// Get account for the action
+	var config struct {
+		AccountID string `json:"account_id"`
+		Action    string `json:"action"` // follow, like, recast, reply, post
+		Target    string `json:"target"` // target user/cast
+		Content   string `json:"content"`
+	}
+
+	if task.Config != "" {
+		json.Unmarshal([]byte(task.Config), &config)
+	}
+
+	if config.AccountID == "" {
+		return fmt.Errorf("account_id not specified in task config")
+	}
+
+	accountID, err := uuid.Parse(config.AccountID)
+	if err != nil {
+		return fmt.Errorf("invalid account_id: %w", err)
+	}
+
+	var account models.PlatformAccount
+	if err := s.db.First(&account, accountID).Error; err != nil {
+		return fmt.Errorf("account not found: %w", err)
+	}
+
+	// Execute based on platform and action
+	switch account.Platform {
+	case models.PlatformFarcaster:
+		return s.executeFarcasterAction(&account, config.Action, config.Target, config.Content, execution)
+	case models.PlatformTelegram:
+		return s.executeTelegramAction(&account, config.Action, config.Target, config.Content, execution)
+	default:
+		return fmt.Errorf("platform %s not supported for social actions", account.Platform)
+	}
+}
+
+// executeFarcasterAction executes a Farcaster action
+func (s *Scheduler) executeFarcasterAction(account *models.PlatformAccount, action, target, content string, execution *models.TaskExecution) error {
+	if s.config.NeynarAPIKey == "" {
+		return fmt.Errorf("NEYNAR_API_KEY not configured")
+	}
+
+	client := &http.Client{Timeout: 30 * time.Second}
+	var endpoint string
+	var payload map[string]interface{}
+
+	switch action {
+	case "follow":
+		endpoint = "https://api.neynar.com/v2/farcaster/user/follow"
+		payload = map[string]interface{}{
+			"signer_uuid": account.PlatformUserID,
+			"target_fids": []string{target},
+		}
+	case "like":
+		endpoint = "https://api.neynar.com/v2/farcaster/reaction"
+		payload = map[string]interface{}{
+			"signer_uuid":   account.PlatformUserID,
+			"reaction_type": "like",
+			"target":        target,
+		}
+	case "recast":
+		endpoint = "https://api.neynar.com/v2/farcaster/reaction"
+		payload = map[string]interface{}{
+			"signer_uuid":   account.PlatformUserID,
+			"reaction_type": "recast",
+			"target":        target,
+		}
+	case "reply":
+		endpoint = "https://api.neynar.com/v2/farcaster/cast"
+		payload = map[string]interface{}{
+			"signer_uuid": account.PlatformUserID,
+			"text":        content,
+			"parent":      target,
+		}
+	default:
+		return fmt.Errorf("unknown farcaster action: %s", action)
+	}
+
+	payloadBytes, _ := json.Marshal(payload)
+	req, _ := http.NewRequest("POST", endpoint, bytes.NewBuffer(payloadBytes))
+	req.Header.Set("api_key", s.config.NeynarAPIKey)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("neynar API error: %s", string(body))
+	}
+
+	// Store proof
+	var result map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&result)
+	proofData, _ := json.Marshal(result)
+	s.db.Model(execution).Update("proof_data", string(proofData))
+
+	return nil
+}
+
+// executeTelegramAction executes a Telegram action
+func (s *Scheduler) executeTelegramAction(account *models.PlatformAccount, action, target, content string, execution *models.TaskExecution) error {
+	if s.config.TelegramBotToken == "" {
+		return fmt.Errorf("TELEGRAM_BOT_TOKEN not configured")
+	}
+
+	client := &http.Client{Timeout: 30 * time.Second}
+	baseURL := fmt.Sprintf("https://api.telegram.org/bot%s", s.config.TelegramBotToken)
+
+	switch action {
+	case "post", "send":
+		url := baseURL + "/sendMessage"
+		payload := map[string]interface{}{
+			"chat_id": target,
+			"text":    content,
+		}
+		payloadBytes, _ := json.Marshal(payload)
+		resp, err := client.Post(url, "application/json", bytes.NewBuffer(payloadBytes))
+		if err != nil {
+			return err
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			body, _ := io.ReadAll(resp.Body)
+			return fmt.Errorf("telegram error: %s", string(body))
+		}
+	default:
+		return fmt.Errorf("unknown telegram action: %s", action)
+	}
+
+	return nil
+}
+
+// executeTransaction executes a blockchain transaction
+func (s *Scheduler) executeTransaction(ctx context.Context, userID uuid.UUID, task *models.CampaignTask, execution *models.TaskExecution) error {
+	// Transaction execution requires manual approval for security
+	// Mark as requiring manual intervention
+	s.db.Model(execution).Update("status", "waiting_manual")
+
+	s.wsHub.BroadcastTaskUpdate(userID.String(), websocket.TaskStatusUpdate{
+		TaskID:         execution.TaskID.String(),
+		Status:         "waiting_manual",
+		Message:        "Transaction requires manual approval",
+		RequiresManual: true,
+	})
+
+	return fmt.Errorf("transaction requires manual approval")
 }
