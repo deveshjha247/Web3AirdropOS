@@ -84,8 +84,22 @@ type ContentDraft struct {
 	AIModel     string     `gorm:"size:50" json:"ai_model,omitempty"`
 	Tone        string     `gorm:"size:30" json:"tone,omitempty"` // casual, professional, funny, etc.
 	
-	// Status
-	Status      string     `gorm:"size:30;default:'draft'" json:"status"` // draft, approved, scheduled, posted
+	// Status: drafted -> awaiting_approval -> approved -> scheduled -> published -> failed
+	Status      string     `gorm:"size:30;default:'drafted'" json:"status"`
+	
+	// Approval workflow
+	ApprovedAt   *time.Time `json:"approved_at,omitempty"`
+	ApprovedBy   *uuid.UUID `gorm:"type:uuid" json:"approved_by,omitempty"`
+	RejectedAt   *time.Time `json:"rejected_at,omitempty"`
+	RejectionReason string  `gorm:"type:text" json:"rejection_reason,omitempty"`
+	
+	// Publishing info
+	PublishedAt  *time.Time `json:"published_at,omitempty"`
+	PublishedPostID string  `gorm:"size:200" json:"published_post_id,omitempty"`
+	PublishedURL string     `gorm:"size:500" json:"published_url,omitempty"`
+	
+	// Target account for publishing
+	TargetAccountID *uuid.UUID `gorm:"type:uuid" json:"target_account_id,omitempty"`
 	
 	// Engagement prediction
 	PredictedEngagement string `gorm:"type:jsonb" json:"predicted_engagement,omitempty"`
