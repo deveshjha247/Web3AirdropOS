@@ -249,12 +249,3 @@ func (s *AccountService) LogActivity(accountID uuid.UUID, activityType string, c
 
 	return s.container.DB.Create(activity).Error
 }
-
-// Import gorm for the db type
-import (
-	"encoding/json"
-	
-	"gorm.io/gorm"
-	
-	"github.com/web3airdropos/backend/internal/websocket"
-)
