@@ -306,7 +306,7 @@ func (s *ProductionServer) setupRoutes() {
 			{
 				dashboardHandler := handlers.NewDashboardHandler(s.services)
 				dashboard.GET("/stats", dashboardHandler.GetStats)
-				dashboard.GET("/activity", dashboardHandler.GetActivity)
+				dashboard.GET("/activity", dashboardHandler.GetRecentActivity)
 				dashboard.GET("/campaigns/active", dashboardHandler.GetActiveCampaigns)
 			}
 

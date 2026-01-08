@@ -537,7 +537,7 @@ func (s *TaskService) executeReplyWithAdapter(ctx context.Context, userID uuid.U
 	defer lock.Release(ctx)
 
 	// TargetID is the post ID to reply to
-	return adapter.Reply(ctx, task.TargetURL, content)
+	return adapter.Reply(ctx, task.TargetURL, &platforms.PostContent{Text: content})
 }
 
 func (s *TaskService) executeLike(userID uuid.UUID, task *models.CampaignTask, execution *models.TaskExecution) error {
