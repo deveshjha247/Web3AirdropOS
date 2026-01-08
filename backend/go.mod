@@ -16,4 +16,6 @@ require (
 	gorm.io/gorm v1.25.5
 	gorm.io/driver/postgres v1.5.4
 	golang.org/x/crypto v0.16.0
+	github.com/docker/docker v24.0.7+incompatible
+	github.com/docker/go-connections v0.4.0
 )
