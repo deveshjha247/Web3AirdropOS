@@ -14,6 +14,7 @@ import {
   ExternalLink,
   Tag,
   Folder,
+  Wallet,
 } from 'lucide-react'
 
 // Mock data
