@@ -1,4 +1,4 @@
-package middleware
+package auth
 
 import (
 	"net/http"
@@ -6,12 +6,10 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-
-	"github.com/web3airdropos/backend/internal/auth"
 )
 
 // AuthMiddleware returns a Gin middleware for JWT authentication
-func AuthMiddleware(authService *auth.AuthService) gin.HandlerFunc {
+func AuthMiddleware(authService *AuthService) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		authHeader := c.GetHeader("Authorization")
 		if authHeader == "" {
@@ -52,7 +50,7 @@ func AuthMiddleware(authService *auth.AuthService) gin.HandlerFunc {
 }
 
 // RateLimitMiddleware returns a Gin middleware for rate limiting
-func RateLimitMiddleware(limiter *auth.RateLimiter, config auth.RateLimitConfig) gin.HandlerFunc {
+func RateLimitMiddleware(limiter *RateLimiter, config RateLimitConfig) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		ip := c.ClientIP()
 
@@ -82,7 +80,7 @@ func RateLimitMiddleware(limiter *auth.RateLimiter, config auth.RateLimitConfig)
 }
 
 // UserRateLimitMiddleware rate limits by authenticated user
-func UserRateLimitMiddleware(limiter *auth.RateLimiter, config auth.RateLimitConfig) gin.HandlerFunc {
+func UserRateLimitMiddleware(limiter *RateLimiter, config RateLimitConfig) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		userID, exists := c.Get("user_id")
 		if !exists {
@@ -130,12 +128,12 @@ func GetSessionID(c *gin.Context) (uuid.UUID, bool) {
 }
 
 // GetClaims extracts claims from gin context
-func GetClaims(c *gin.Context) (*auth.Claims, bool) {
+func GetClaims(c *gin.Context) (*Claims, bool) {
 	claims, exists := c.Get("claims")
 	if !exists {
 		return nil, false
 	}
-	return claims.(*auth.Claims), true
+	return claims.(*Claims), true
 }
 
 // RequireRole middleware (for future role-based access control)
