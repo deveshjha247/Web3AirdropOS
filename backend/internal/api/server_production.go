@@ -520,9 +520,9 @@ func (s *ProductionServer) deleteSecret() gin.HandlerFunc {
 func (s *ProductionServer) healthCheck() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		status := gin.H{
-			"status":  "healthy",
-			"service": "web3airdropos-backend",
-			"version": "1.0.0",
+			"status":    "healthy",
+			"service":   "web3airdropos-backend",
+			"version":   "1.0.0",
 			"timestamp": time.Now().UTC(),
 		}
 
@@ -593,9 +593,9 @@ func (s *ProductionServer) logout() gin.HandlerFunc {
 
 		// Log audit event
 		s.container.AuditLogger.Log(c.Request.Context(), &audit.LogEntry{
-			UserID:   userID,
-			Action:   audit.ActionLogout,
-			Result:   audit.ResultSuccess,
+			UserID:    userID,
+			Action:    audit.ActionLogout,
+			Result:    audit.ResultSuccess,
 			IPAddress: c.ClientIP(),
 			UserAgent: c.GetHeader("User-Agent"),
 		})
