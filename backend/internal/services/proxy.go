@@ -10,7 +10,7 @@ import (
 	"github.com/google/uuid"
 	"golang.org/x/net/proxy"
 
-	"github.com/cryptoautomation/backend/internal/models"
+	"github.com/web3airdropos/backend/internal/models"
 )
 
 type ProxyService struct {

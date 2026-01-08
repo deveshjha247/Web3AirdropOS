@@ -1,4 +1,4 @@
-module github.com/cryptoautomation/backend
+module github.com/web3airdropos/backend
 
 go 1.21
 

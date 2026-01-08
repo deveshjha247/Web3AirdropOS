@@ -20,7 +20,7 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/google/uuid"
 
-	"github.com/cryptoautomation/backend/internal/models"
+	"github.com/web3airdropos/backend/internal/models"
 )
 
 type WalletService struct {

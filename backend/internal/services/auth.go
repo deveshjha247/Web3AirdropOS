@@ -8,7 +8,7 @@ import (
 	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
 
-	"github.com/cryptoautomation/backend/internal/models"
+	"github.com/web3airdropos/backend/internal/models"
 )
 
 type AuthService struct {

@@ -7,11 +7,11 @@ import (
 	"github.com/go-redis/redis/v8"
 	"gorm.io/gorm"
 
-	"github.com/cryptoautomation/backend/internal/api/handlers"
-	"github.com/cryptoautomation/backend/internal/api/middleware"
-	"github.com/cryptoautomation/backend/internal/config"
-	"github.com/cryptoautomation/backend/internal/services"
-	"github.com/cryptoautomation/backend/internal/websocket"
+	"github.com/web3airdropos/backend/internal/api/handlers"
+	"github.com/web3airdropos/backend/internal/api/middleware"
+	"github.com/web3airdropos/backend/internal/config"
+	"github.com/web3airdropos/backend/internal/services"
+	"github.com/web3airdropos/backend/internal/websocket"
 )
 
 type Server struct {

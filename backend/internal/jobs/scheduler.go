@@ -12,8 +12,8 @@ import (
 	"github.com/robfig/cron/v3"
 	"gorm.io/gorm"
 
-	"github.com/cryptoautomation/backend/internal/models"
-	"github.com/cryptoautomation/backend/internal/websocket"
+	"github.com/web3airdropos/backend/internal/models"
+	"github.com/web3airdropos/backend/internal/websocket"
 )
 
 // Scheduler manages all background jobs

@@ -5,7 +5,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/cryptoautomation/backend/internal/services"
+	"github.com/web3airdropos/backend/internal/services"
 )
 
 type AuthHandler struct {

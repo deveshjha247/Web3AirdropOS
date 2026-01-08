@@ -6,7 +6,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/cryptoautomation/backend/internal/models"
+	"github.com/web3airdropos/backend/internal/models"
 )
 
 type AccountService struct {
@@ -256,5 +256,5 @@ import (
 	
 	"gorm.io/gorm"
 	
-	"github.com/cryptoautomation/backend/internal/websocket"
+	"github.com/web3airdropos/backend/internal/websocket"
 )

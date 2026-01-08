@@ -4,11 +4,11 @@ import (
 	"log"
 	"os"
 
-	"github.com/cryptoautomation/backend/internal/api"
-	"github.com/cryptoautomation/backend/internal/config"
-	"github.com/cryptoautomation/backend/internal/database"
-	"github.com/cryptoautomation/backend/internal/jobs"
-	"github.com/cryptoautomation/backend/internal/websocket"
+	"github.com/web3airdropos/backend/internal/api"
+	"github.com/web3airdropos/backend/internal/config"
+	"github.com/web3airdropos/backend/internal/database"
+	"github.com/web3airdropos/backend/internal/jobs"
+	"github.com/web3airdropos/backend/internal/websocket"
 	"github.com/joho/godotenv"
 )
 

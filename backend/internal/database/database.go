@@ -9,7 +9,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 
-	"github.com/cryptoautomation/backend/internal/models"
+	"github.com/web3airdropos/backend/internal/models"
 )
 
 func Connect(databaseURL string) (*gorm.DB, error) {
