@@ -45,14 +45,14 @@ func (s *TaskService) GetAdapter(platform string) (platforms.PlatformAdapter, er
 }
 
 type UpdateTaskRequest struct {
-	Name           string  `json:"name"`
-	Description    string  `json:"description"`
-	TargetURL      string  `json:"target_url"`
-	RequiredAction string  `json:"required_action"`
-	IsAutomatable  *bool   `json:"is_automatable"`
-	RequiresManual *bool   `json:"requires_manual"`
-	Points         *int    `json:"points"`
-	Order          *int    `json:"order"`
+	Name           string `json:"name"`
+	Description    string `json:"description"`
+	TargetURL      string `json:"target_url"`
+	RequiredAction string `json:"required_action"`
+	IsAutomatable  *bool  `json:"is_automatable"`
+	RequiresManual *bool  `json:"requires_manual"`
+	Points         *int   `json:"points"`
+	Order          *int   `json:"order"`
 }
 
 type ExecuteTaskRequest struct {
@@ -119,7 +119,7 @@ func (s *TaskService) Update(userID, taskID uuid.UUID, req *UpdateTaskRequest) (
 
 func (s *TaskService) Execute(userID, taskID uuid.UUID, req *ExecuteTaskRequest) (*models.TaskExecution, error) {
 	ctx := context.Background()
-	
+
 	task, err := s.Get(userID, taskID)
 	if err != nil {
 		return nil, err
@@ -127,7 +127,7 @@ func (s *TaskService) Execute(userID, taskID uuid.UUID, req *ExecuteTaskRequest)
 
 	// Generate idempotency key
 	idempotencyKey := s.generateIdempotencyKey(userID, taskID, req)
-	
+
 	// Check for existing execution with same idempotency key
 	var existingExecution models.TaskExecution
 	if err := s.container.DB.Where("idempotency_key = ?", idempotencyKey).First(&existingExecution).Error; err == nil {
@@ -214,7 +214,7 @@ func (s *TaskService) Execute(userID, taskID uuid.UUID, req *ExecuteTaskRequest)
 
 	// Execute based on task type
 	proof, err := s.executeTaskByType(ctx, userID, task, execution)
-	
+
 	// Record rate limit action on success
 	if err == nil && req.AccountID != nil && task.TargetPlatform != "" {
 		s.rateLimiter.RecordAction(ctx, task.TargetPlatform, req.AccountID.String())
@@ -289,7 +289,7 @@ func (s *TaskService) generateIdempotencyKey(userID, taskID uuid.UUID, req *Exec
 	}
 	// Add date to allow re-execution on different days for daily tasks
 	data += time.Now().Format("2006-01-02")
-	
+
 	hash := sha256.Sum256([]byte(data))
 	return hex.EncodeToString(hash[:])
 }
@@ -454,8 +454,32 @@ func (s *TaskService) executePostWithAdapter(ctx context.Context, userID uuid.UU
 		return nil, errors.New("account required for post task")
 	}
 
-	// Get content from task or generate
-	content := task.RequiredAction // Placeholder - should get from content draft
+	// Get content from task config or content draft
+	var content string
+	if task.Config != "" {
+		// Try to parse content from task config
+		var cfg struct {
+			Content       string `json:"content"`
+			ContentDraftID string `json:"content_draft_id"`
+		}
+		if err := json.Unmarshal([]byte(task.Config), &cfg); err == nil {
+			if cfg.Content != "" {
+				content = cfg.Content
+			} else if cfg.ContentDraftID != "" {
+				// Fetch from content drafts table
+				var draft models.ContentDraft
+				if err := s.container.DB.First(&draft, "id = ?", cfg.ContentDraftID).Error; err == nil {
+					content = draft.Content
+				}
+			}
+		}
+	}
+
+	// Fall back to required action if no content in config
+	if content == "" {
+		content = task.RequiredAction
+	}
+
 	if content == "" {
 		return nil, errors.New("no content specified for post")
 	}
@@ -605,7 +629,7 @@ func (s *TaskService) Continue(userID, taskID, executionID uuid.UUID, result map
 	now := time.Now()
 	execution.Status = "completed"
 	execution.CompletedAt = &now
-	
+
 	if txHash, ok := result["transaction_hash"].(string); ok {
 		execution.TransactionHash = txHash
 	}
