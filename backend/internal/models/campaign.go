@@ -112,12 +112,23 @@ type TaskExecution struct {
 	WalletID      *uuid.UUID `gorm:"type:uuid" json:"wallet_id,omitempty"`
 	AccountID     *uuid.UUID `gorm:"type:uuid" json:"account_id,omitempty"`
 	
-	Status        string     `gorm:"size:30;not null" json:"status"` // pending, in_progress, waiting_manual, completed, failed
+	Status        string     `gorm:"size:30;not null" json:"status"` // pending, in_progress, waiting_manual, completed, failed, skipped
 	StartedAt     time.Time  `json:"started_at"`
 	CompletedAt   *time.Time `json:"completed_at,omitempty"`
 	
+	// Idempotency - prevents duplicate executions
+	IdempotencyKey string    `gorm:"size:200;uniqueIndex" json:"idempotency_key"` // taskID+accountID+date or taskID+walletID+date
+	
+	// Proof of completion
+	ProofType     string     `gorm:"size:50" json:"proof_type,omitempty"` // post_url, tx_hash, cast_hash, screenshot
+	ProofValue    string     `gorm:"size:500" json:"proof_value,omitempty"`
+	ProofData     string     `gorm:"type:jsonb" json:"proof_data,omitempty"` // Full proof object
+	ScreenshotPath string    `gorm:"size:500" json:"screenshot_path,omitempty"`
+	
 	// Result
 	TransactionHash string    `gorm:"size:100" json:"transaction_hash,omitempty"`
+	PostID          string    `gorm:"size:200" json:"post_id,omitempty"`
+	PostURL         string    `gorm:"size:500" json:"post_url,omitempty"`
 	ResultData      string    `gorm:"type:jsonb" json:"result_data,omitempty"`
 	ErrorMessage    string    `gorm:"type:text" json:"error_message,omitempty"`
 	
@@ -127,6 +138,9 @@ type TaskExecution struct {
 	// Retry info
 	RetryCount    int        `gorm:"default:0" json:"retry_count"`
 	MaxRetries    int        `gorm:"default:3" json:"max_retries"`
+	
+	// Audit link
+	AuditLogID    *uuid.UUID `gorm:"type:uuid" json:"audit_log_id,omitempty"`
 	
 	CreatedAt     time.Time  `json:"created_at"`
 	UpdatedAt     time.Time  `json:"updated_at"`
