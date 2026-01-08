@@ -373,6 +373,94 @@ npm run dev
 
 Rate limits are enforced via Redis sliding window algorithm with distributed locks.
 
+## 🚀 Production Deployment
+
+### Overview
+
+This release includes full production-grade infrastructure:
+
+1. **Database Migrations**: SQL migration files with CLI tool
+2. **Redis Queue + Locks**: Job queue with distributed locking
+3. **JWT Auth + Refresh Token Rotation**: Secure token family tracking
+4. **Task System**: PENDING/RUNNING/MANUAL_REQUIRED/DONE/FAILED states
+5. **Audit Logging**: Complete action history with proofs
+6. **Secrets Vault**: AES-256-GCM encryption for API keys at rest
+7. **Nginx + SSL**: Production reverse proxy with rate limiting
+
+### Quick Production Deploy
+
+```bash
+# 1. Generate secure secrets
+make secrets
+
+# 2. Copy environment template
+cp .env.production.template .env
+
+# 3. Fill in all values in .env
+
+# 4. Build and start
+make build
+make up
+
+# 5. Run migrations
+make migrate
+
+# 6. Initialize SSL (after DNS is configured)
+make ssl-init
+
+# 7. Check health
+make health
+```
+
+### Production Files
+
+| File | Purpose |
+|------|---------|
+| `docker-compose.prod.yml` | Production container orchestration |
+| `nginx/nginx.conf` | Nginx with SSL + rate limiting |
+| `backend/migrations/` | SQL migration files |
+| `backend/cmd/migrate/` | Migration CLI tool |
+| `docs/DEPLOYMENT.md` | Complete deployment guide |
+| `.env.production.template` | Environment variable template |
+| `Makefile` | Common operations |
+
+### Key Environment Variables
+
+| Variable | Description | Required |
+|----------|-------------|----------|
+| `DB_PASSWORD` | PostgreSQL password | ✅ |
+| `REDIS_PASSWORD` | Redis password | ✅ |
+| `JWT_SECRET` | JWT signing secret (64+ chars) | ✅ |
+| `VAULT_MASTER_KEY` | Secrets encryption key (32+ chars) | ✅ |
+| `OPENAI_API_KEY` | OpenAI API key | For AI features |
+| `NEYNAR_API_KEY` | Neynar API key | For Farcaster |
+
+### Make Commands
+
+```bash
+make help           # Show all commands
+make build          # Build Docker images
+make up             # Start services
+make down           # Stop services
+make logs-f         # Follow logs
+make migrate        # Run migrations
+make backup         # Create database backup
+make ssl-init       # Initialize SSL certificates
+make secrets        # Generate secure secrets
+make health         # Check service health
+```
+
+### Security Checklist
+
+- [ ] Generate unique secrets with `make secrets`
+- [ ] Configure firewall (only 80/443 open)
+- [ ] Set up SSL with Let's Encrypt
+- [ ] Enable database backups
+- [ ] Configure monitoring (Sentry, DataDog)
+- [ ] Review Nginx rate limits for your needs
+
+See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for the complete deployment guide.
+
 ## 🤝 Contributing
 
 1. Fork the repository

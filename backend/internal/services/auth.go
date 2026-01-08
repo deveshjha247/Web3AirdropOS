@@ -149,23 +149,30 @@ func (s *AuthService) RefreshToken(refreshToken string) (*AuthResponse, error) {
 
 	// Use production auth if available
 	if s.productionAuth != nil {
-		result, err := s.productionAuth.RefreshToken(ctx, refreshToken, "", "")
+		tokens, err := s.productionAuth.RefreshToken(ctx, refreshToken, "", "")
+		if err != nil {
+			return nil, err
+		}
+
+		// RefreshToken returns TokenPair, we need to parse the claims to get user ID
+		// For now, decode from the access token
+		claims, err := s.productionAuth.ValidateAccessToken(tokens.AccessToken)
 		if err != nil {
 			return nil, err
 		}
 
 		// Get user from database
 		var user models.User
-		if err := s.container.DB.First(&user, result.UserID).Error; err != nil {
+		if err := s.container.DB.First(&user, claims.UserID).Error; err != nil {
 			return nil, err
 		}
 		user.PasswordHash = ""
 
 		return &AuthResponse{
 			User:         &user,
-			AccessToken:  result.AccessToken,
-			RefreshToken: result.RefreshToken,
-			ExpiresAt:    result.ExpiresAt,
+			AccessToken:  tokens.AccessToken,
+			RefreshToken: tokens.RefreshToken,
+			ExpiresAt:    tokens.ExpiresAt,
 		}, nil
 	}
 
