@@ -537,7 +537,7 @@ func (s *TaskService) executeReplyWithAdapter(ctx context.Context, userID uuid.U
 	defer lock.Release(ctx)
 
 	// TargetID is the post ID to reply to
-	return adapter.Reply(ctx, task.TargetID, content)
+	return adapter.Reply(ctx, task.TargetURL, content)
 }
 
 func (s *TaskService) executeLike(userID uuid.UUID, task *models.CampaignTask, execution *models.TaskExecution) error {
@@ -569,7 +569,7 @@ func (s *TaskService) executeLikeWithAdapter(ctx context.Context, userID uuid.UU
 	}
 	defer lock.Release(ctx)
 
-	return adapter.Like(ctx, task.TargetID)
+	return adapter.Like(ctx, task.TargetURL)
 }
 
 func (s *TaskService) executeRecast(userID uuid.UUID, task *models.CampaignTask, execution *models.TaskExecution) error {
@@ -601,7 +601,7 @@ func (s *TaskService) executeRecastWithAdapter(ctx context.Context, userID uuid.
 	}
 	defer lock.Release(ctx)
 
-	return adapter.Repost(ctx, task.TargetID)
+	return adapter.Repost(ctx, task.TargetURL)
 }
 
 func (s *TaskService) executeVerify(userID uuid.UUID, task *models.CampaignTask, execution *models.TaskExecution) error {
