@@ -292,7 +292,8 @@ func (s *AuthService) LogoutSession(ctx context.Context, userID, sessionID uuid.
 // generateTokenPair creates a new access/refresh token pair
 func (s *AuthService) generateTokenPair(ctx context.Context, user *models.User, ipAddress, userAgent string) (*TokenPair, error) {
 	familyID := uuid.New() // New token family for new login
-	return s.generateTokenPairWithFamily(ctx, user, familyID, ipAddress, userAgent)
+	tokens, _, err := s.generateTokenPairWithFamily(ctx, user, familyID, ipAddress, userAgent)
+	return tokens, err
 }
 
 // generateTokenPairWithFamily creates tokens with a specific family ID

@@ -58,10 +58,19 @@ func Load() *Config {
 		TwitterBearerToken:  getEnv("TWITTER_BEARER_TOKEN", ""),
 		TwitterAccessToken:  getEnv("TWITTER_ACCESS_TOKEN", ""),
 		TwitterAccessSecret: getEnv("TWITTER_ACCESS_SECRET", ""),
-		
+
 		// AI
 		OpenAIKey: getEnv("OPENAI_API_KEY", ""),
 
 		// Blockchain RPC URLs
 		EthereumRPCURL: getEnv("ETHEREUM_RPC_URL", "https://eth.llamarpc.com"),
 		SolanaRPCURL:   getEnv("SOLANA_RPC_URL", "https://api.mainnet-beta.solana.com"),
+	}
+}
+
+func getEnv(key, defaultValue string) string {
+	if value := os.Getenv(key); value != "" {
+		return value
+	}
+	return defaultValue
+}
