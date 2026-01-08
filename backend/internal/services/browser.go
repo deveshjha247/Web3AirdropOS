@@ -8,11 +8,10 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os/exec"
 	"strings"
 	"time"
 
-	"github.com/docker/docker/api/types/container"
-	"github.com/docker/docker/client"
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 
@@ -22,8 +21,8 @@ import (
 
 type BrowserService struct {
 	container    *Container
-	dockerClient *client.Client
 	sessions     map[uuid.UUID]*BrowserSession
+	dockerAvailable bool
 }
 
 type BrowserSession struct {
@@ -39,15 +38,18 @@ type BrowserSession struct {
 }
 
 func NewBrowserService(c *Container) *BrowserService {
-	dockerClient, err := client.NewClientWithOpts(client.FromEnv)
-	if err != nil {
-		fmt.Printf("⚠️ Docker client not available: %v\n", err)
+	// Check if docker is available
+	dockerAvailable := false
+	if _, err := exec.LookPath("docker"); err == nil {
+		dockerAvailable = true
+	} else {
+		fmt.Printf("⚠️ Docker not available: %v\n", err)
 	}
 
 	return &BrowserService{
-		container:    c,
-		dockerClient: dockerClient,
-		sessions:     make(map[uuid.UUID]*BrowserSession),
+		container:       c,
+		sessions:        make(map[uuid.UUID]*BrowserSession),
+		dockerAvailable: dockerAvailable,
 	}
 }
 
@@ -173,9 +175,7 @@ func (s *BrowserService) StartSession(userID uuid.UUID, req *StartSessionRequest
 }
 
 func (s *BrowserService) startBrowserContainer(userID uuid.UUID, session *models.BrowserSession, profile *models.BrowserProfile, proxyConfig string, startURL string) {
-	ctx := context.Background()
-
-	if s.dockerClient == nil {
+	if !s.dockerAvailable {
 		s.container.DB.Model(session).Updates(map[string]interface{}{
 			"status":         "failed",
 			"manual_message": "Docker not available",
@@ -183,44 +183,34 @@ func (s *BrowserService) startBrowserContainer(userID uuid.UUID, session *models
 		return
 	}
 
-	// Container configuration
-	env := []string{
-		fmt.Sprintf("SCREEN_WIDTH=%d", profile.ScreenWidth),
-		fmt.Sprintf("SCREEN_HEIGHT=%d", profile.ScreenHeight),
-		fmt.Sprintf("VNC_PASSWORD=%s", uuid.New().String()[:8]),
-		fmt.Sprintf("USER_AGENT=%s", profile.UserAgent),
-		fmt.Sprintf("LANGUAGE=%s", profile.Language),
+	// Build environment arguments for docker run
+	envArgs := []string{
+		"-e", fmt.Sprintf("SCREEN_WIDTH=%d", profile.ScreenWidth),
+		"-e", fmt.Sprintf("SCREEN_HEIGHT=%d", profile.ScreenHeight),
+		"-e", fmt.Sprintf("VNC_PASSWORD=%s", uuid.New().String()[:8]),
+		"-e", fmt.Sprintf("USER_AGENT=%s", profile.UserAgent),
+		"-e", fmt.Sprintf("LANGUAGE=%s", profile.Language),
 	}
 
 	if proxyConfig != "" {
-		env = append(env, fmt.Sprintf("PROXY=%s", proxyConfig))
+		envArgs = append(envArgs, "-e", fmt.Sprintf("PROXY=%s", proxyConfig))
 	}
 
 	if startURL != "" {
-		env = append(env, fmt.Sprintf("START_URL=%s", startURL))
+		envArgs = append(envArgs, "-e", fmt.Sprintf("START_URL=%s", startURL))
 	}
 
-	resp, err := s.dockerClient.ContainerCreate(ctx,
-		&container.Config{
-			Image: "browser-automation:latest",
-			Env:   env,
-			ExposedPorts: map[string]struct{}{
-				"5900/tcp": {},
-				"9222/tcp": {},
-				"8080/tcp": {},
-			},
-		},
-		&container.HostConfig{
-			AutoRemove: true,
-			Resources: container.Resources{
-				Memory:   1024 * 1024 * 1024, // 1GB RAM
-				NanoCPUs: 1000000000,         // 1 CPU
-			},
-		},
-		nil,
-		nil,
-		fmt.Sprintf("browser-%s", session.ID.String()[:8]),
-	)
+	containerName := fmt.Sprintf("browser-%s", session.ID.String()[:8])
+
+	// Build docker run command
+	args := []string{"run", "-d", "--rm", "--name", containerName,
+		"-p", "0:5900", "-p", "0:9222", "-p", "0:8080",
+		"--memory", "1g", "--cpus", "1"}
+	args = append(args, envArgs...)
+	args = append(args, "browser-automation:latest")
+
+	cmd := exec.Command("docker", args...)
+	output, err := cmd.Output()
 
 	if err != nil {
 		s.container.DB.Model(session).Updates(map[string]interface{}{
@@ -235,28 +225,44 @@ func (s *BrowserService) startBrowserContainer(userID uuid.UUID, session *models
 		return
 	}
 
-	// Start container
-	if err := s.dockerClient.ContainerStart(ctx, resp.ID, container.StartOptions{}); err != nil {
+	containerID := strings.TrimSpace(string(output))
+
+	// Get port mappings
+	inspectCmd := exec.Command("docker", "port", containerName)
+	portOutput, err := inspectCmd.Output()
+	if err != nil {
 		s.container.DB.Model(session).Updates(map[string]interface{}{
 			"status":         "failed",
-			"manual_message": err.Error(),
+			"manual_message": "Failed to get port mappings",
 		})
 		return
 	}
 
-	// Get container info for ports
-	info, err := s.dockerClient.ContainerInspect(ctx, resp.ID)
-	if err != nil {
-		return
+	// Parse ports (simple parsing)
+	portLines := strings.Split(string(portOutput), "\n")
+	var vncPort, debugPort, wsPort string
+	for _, line := range portLines {
+		if strings.Contains(line, "5900") {
+			parts := strings.Split(line, ":")
+			if len(parts) > 1 {
+				vncPort = strings.TrimSpace(parts[len(parts)-1])
+			}
+		} else if strings.Contains(line, "9222") {
+			parts := strings.Split(line, ":")
+			if len(parts) > 1 {
+				debugPort = strings.TrimSpace(parts[len(parts)-1])
+			}
+		} else if strings.Contains(line, "8080") {
+			parts := strings.Split(line, ":")
+			if len(parts) > 1 {
+				wsPort = strings.TrimSpace(parts[len(parts)-1])
+			}
+		}
 	}
 
 	// Update session with container info
-	vncPort := info.NetworkSettings.Ports["5900/tcp"][0].HostPort
-	debugPort := info.NetworkSettings.Ports["9222/tcp"][0].HostPort
-	wsPort := info.NetworkSettings.Ports["8080/tcp"][0].HostPort
-
 	s.container.DB.Model(session).Updates(map[string]interface{}{
-		"container_id":   resp.ID,
+		"container_id":   containerID,
 		"vnc_url":        fmt.Sprintf("vnc://localhost:%s", vncPort),
 		"debugger_url":   fmt.Sprintf("http://localhost:%s", debugPort),
 		"websocket_url":  fmt.Sprintf("ws://localhost:%s", wsPort),
@@ -268,7 +274,7 @@ func (s *BrowserService) startBrowserContainer(userID uuid.UUID, session *models
 		ID:           session.ID,
 		UserID:       userID,
 		ProfileID:    session.ProfileID,
-		ContainerID:  resp.ID,
+		ContainerID:  containerID,
 		VNCURL:       fmt.Sprintf("vnc://localhost:%s", vncPort),
 		DebuggerURL:  fmt.Sprintf("http://localhost:%s", debugPort),
 		WebSocketURL: fmt.Sprintf("ws://localhost:%s", wsPort),
@@ -315,11 +321,10 @@ func (s *BrowserService) StopSession(userID, sessionID uuid.UUID) error {
 		return err
 	}
 
-	// Stop container
-	if s.dockerClient != nil && session.ContainerID != "" {
-		ctx := context.Background()
-		timeout := 10
-		s.dockerClient.ContainerStop(ctx, session.ContainerID, container.StopOptions{Timeout: &timeout})
+	// Stop container using docker CLI
+	if s.dockerAvailable && session.ContainerID != "" {
+		cmd := exec.Command("docker", "stop", session.ContainerID)
+		cmd.Run()
 	}
 
 	// Update status
