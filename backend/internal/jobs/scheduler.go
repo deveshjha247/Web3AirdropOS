@@ -356,7 +356,7 @@ func (s *Scheduler) handleScheduledPost(ctx context.Context, jctx *JobContext, s
 
 	// Get pending scheduled posts
 	var posts []models.ScheduledPost
-	if err := s.db.Where("user_id = ? AND status = ? AND scheduled_at <= ?",
+	if err := s.db.Where("user_id = ? AND status = ? AND scheduled_for <= ?",
 		jctx.UserID, "pending", time.Now()).Find(&posts).Error; err != nil {
 		return err
 	}

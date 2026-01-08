@@ -102,6 +102,7 @@ type ScheduledPost struct {
 	
 	Content       string     `gorm:"type:text;not null" json:"content"`
 	MediaURLs     string     `gorm:"type:jsonb" json:"media_urls,omitempty"`
+	Platform      string     `gorm:"size:50;not null" json:"platform"` // farcaster, x, telegram, discord
 	
 	// Reply context
 	ReplyToID     string     `gorm:"size:200" json:"reply_to_id,omitempty"`
@@ -109,6 +110,7 @@ type ScheduledPost struct {
 	
 	// Schedule
 	ScheduledFor  time.Time  `json:"scheduled_for"`
+	ScheduledAt   time.Time  `json:"scheduled_at"` // Alias for compatibility
 	TimeZone      string     `gorm:"size:50" json:"timezone"`
 	
 	// Status
