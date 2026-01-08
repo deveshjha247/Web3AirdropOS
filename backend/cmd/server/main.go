@@ -51,7 +51,7 @@ func main() {
 		port = "8080"
 	}
 
-	log.Printf("🚀 Crypto Automation Backend starting on port %s", port)
+	log.Printf("🚀 Web3AirdropOS Backend starting on port %s", port)
 	if err := server.Run(":" + port); err != nil {
 		log.Fatalf("Failed to start server: %v", err)
 	}
