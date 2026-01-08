@@ -106,23 +106,20 @@ func (s *AuthService) Login(req *LoginRequest) (*AuthResponse, error) {
 
 	// Use production auth if available
 	if s.productionAuth != nil {
-		result, err := s.productionAuth.Login(ctx, req.Email, req.Password, "", "")
+		authReq := &auth.LoginRequest{
+			Email:    req.Email,
+			Password: req.Password,
+		}
+		result, err := s.productionAuth.Login(ctx, authReq, "", "")
 		if err != nil {
 			return nil, err
 		}
 
-		// Get user from database
-		var user models.User
-		if err := s.container.DB.First(&user, result.UserID).Error; err != nil {
-			return nil, err
-		}
-		user.PasswordHash = ""
-
 		return &AuthResponse{
-			User:         &user,
-			AccessToken:  result.AccessToken,
-			RefreshToken: result.RefreshToken,
-			ExpiresAt:    result.ExpiresAt,
+			User:         result.User,
+			AccessToken:  result.Tokens.AccessToken,
+			RefreshToken: result.Tokens.RefreshToken,
+			ExpiresAt:    result.Tokens.ExpiresAt,
 		}, nil
 	}
 
