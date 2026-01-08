@@ -65,10 +65,42 @@ A comprehensive platform for managing multi-wallet operations, multi-platform so
 | Backend API | Go (Gin Framework) |
 | AI Service | Python (FastAPI) |
 | Database | PostgreSQL |
-| Cache/Queue | Redis |
+| Cache/Queue/Locks | Redis |
 | Frontend | Next.js 14 + TailwindCSS |
 | Browser | Chromium + VNC |
 | Container | Docker Compose |
+
+## 🏗 Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                         FRONTEND (Next.js)                       │
+│  Dashboard │ Terminal │ Browser Workspace │ Campaign Manager     │
+└─────────────────────────────┬───────────────────────────────────┘
+                              │ WebSocket + REST
+┌─────────────────────────────┴───────────────────────────────────┐
+│                         BACKEND (Go/Gin)                         │
+├─────────────────────────────────────────────────────────────────┤
+│  Services:                                                       │
+│  ├── Auth, Wallet, Account, Campaign, Task                      │
+│  ├── Browser (Session Lifecycle)                                │
+│  ├── Content (AI + Approval Workflow)                           │
+│  ├── RateLimiter (Redis Distributed Locks)                      │
+│  └── Audit (Complete Action Logging)                            │
+├─────────────────────────────────────────────────────────────────┤
+│  Platform Adapters:                                              │
+│  ├── Farcaster (Neynar API v2)                                  │
+│  ├── Telegram (Bot API)                                         │
+│  └── Twitter (Skeleton - Browser recommended)                   │
+└──────────────┬────────────────────────┬─────────────────────────┘
+               │                        │
+    ┌──────────┴──────────┐   ┌────────┴────────┐
+    │   PostgreSQL        │   │     Redis       │
+    │   - Users/Wallets   │   │   - Sessions    │
+    │   - Campaigns       │   │   - Rate Limits │
+    │   - Audit Logs      │   │   - Locks       │
+    └─────────────────────┘   └─────────────────┘
+```
 
 ## 📁 Project Structure
 
@@ -77,12 +109,16 @@ farcaster/
 ├── backend/                 # Go Backend
 │   ├── cmd/server/         # Entry point
 │   ├── internal/
-│   │   ├── api/            # HTTP handlers
+│   │   ├── api/            # HTTP handlers + middleware
 │   │   ├── config/         # Configuration
 │   │   ├── database/       # PostgreSQL + Redis
-│   │   ├── jobs/           # Job scheduler
-│   │   ├── models/         # Data models
+│   │   ├── models/         # Data models (Wallet, Campaign, AuditLog, etc.)
 │   │   ├── services/       # Business logic
+│   │   │   ├── platforms/  # Platform adapters (Farcaster, Telegram, Twitter)
+│   │   │   ├── audit.go    # Audit logging service
+│   │   │   ├── ratelimit.go# Rate limiting + distributed locks
+│   │   │   ├── browser.go  # Session lifecycle management
+│   │   │   └── task.go     # Task execution with adapters
 │   │   └── websocket/      # Real-time communication
 │   └── Dockerfile
 ├── ai-service/             # Python AI Microservice
@@ -100,14 +136,17 @@ farcaster/
 │   ├── entrypoint.sh
 │   └── Dockerfile
 ├── docker/                 # Docker configs
-└── docker-compose.yml      # Full stack orchestration
+├── docker-compose.yml      # Full stack orchestration
+└── .env.example           # Environment template
 ```
 
 ## 🚦 Quick Start
 
 ### Prerequisites
 - Docker & Docker Compose
-- OpenAI API Key (for AI features)
+- Go 1.21+ (for local development)
+- Node.js 18+ (for frontend development)
+- Python 3.11+ (for AI service)
 
 ### 1. Clone & Configure
 
@@ -118,14 +157,32 @@ cd farcaster
 
 # Copy environment file
 cp .env.example .env
-
-# Edit .env with your configuration
-# - Set OPENAI_API_KEY
-# - Set JWT_SECRET
-# - Set ENCRYPTION_KEY (32 bytes)
 ```
 
-### 2. Start with Docker Compose
+### 2. Configure Environment Variables
+
+Edit `.env` with your configuration:
+
+```bash
+# Required
+JWT_SECRET=your-secure-random-string
+ENCRYPTION_KEY=32-byte-key-for-wallet-encryption!
+
+# For AI features
+OPENAI_API_KEY=sk-your-openai-api-key
+
+# For Farcaster automation (https://neynar.com)
+NEYNAR_API_KEY=your-neynar-api-key
+
+# For Telegram automation
+TELEGRAM_BOT_TOKEN=your-bot-token
+
+# Database (Docker uses defaults)
+DATABASE_URL=postgres://postgres:postgres123@localhost:5432/web3airdropos?sslmode=disable
+REDIS_URL=redis://localhost:6379
+```
+
+### 3. Start with Docker Compose
 
 ```bash
 # Start all services
@@ -138,7 +195,7 @@ docker-compose logs -f
 docker-compose down
 ```
 
-### 3. Access the Dashboard
+### 4. Access the Dashboard
 
 - **Frontend**: http://localhost:3000
 - **Backend API**: http://localhost:8080
@@ -202,10 +259,22 @@ npm run dev
 - `GET /api/browser/profiles` - List profiles
 - `POST /api/browser/sessions` - Create session
 - `POST /api/browser/sessions/:id/action` - Send action
+- `POST /api/browser/sessions/:id/pause` - Pause session
+- `POST /api/browser/sessions/:id/resume` - Resume session
+- `POST /api/browser/sessions/:id/kill` - Kill session
+- `POST /api/browser/sessions/:id/screenshot` - Take screenshot proof
 
 ### Content
 - `POST /api/content/generate` - Generate content
 - `POST /api/content/engagement-plan` - Generate plan
+- `POST /api/content/drafts/:id/approve` - Approve draft
+- `POST /api/content/drafts/:id/reject` - Reject draft
+- `POST /api/content/drafts/:id/publish` - Publish approved content
+
+### Audit Logs
+- `GET /api/audit/logs` - Query audit logs
+- `GET /api/audit/logs/:id` - Get specific log
+- `GET /api/audit/stats` - Get action statistics
 
 ### Jobs
 - `GET /api/jobs` - List automation jobs
