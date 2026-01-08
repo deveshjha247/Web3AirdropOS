@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -459,7 +460,7 @@ func (s *TaskService) executePostWithAdapter(ctx context.Context, userID uuid.UU
 	if task.Config != "" {
 		// Try to parse content from task config
 		var cfg struct {
-			Content       string `json:"content"`
+			Content        string `json:"content"`
 			ContentDraftID string `json:"content_draft_id"`
 		}
 		if err := json.Unmarshal([]byte(task.Config), &cfg); err == nil {
