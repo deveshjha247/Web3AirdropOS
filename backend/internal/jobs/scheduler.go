@@ -502,13 +502,13 @@ func (s *Scheduler) handleCampaignTask(ctx context.Context, jctx *JobContext, sc
 
 			// Execute task based on type
 			var execErr error
-			switch task.ActionType {
-			case "social_action":
+			switch task.Type {
+			case models.TaskTypeFollow, models.TaskTypeLike, models.TaskTypeRecast, models.TaskTypeReply, models.TaskTypePost:
 				execErr = s.executeSocialAction(ctx, jctx.UserID, &task, execution)
-			case "transaction":
+			case models.TaskTypeTransaction:
 				execErr = s.executeTransaction(ctx, jctx.UserID, &task, execution)
 			default:
-				execErr = fmt.Errorf("unknown action type: %s", task.ActionType)
+				execErr = fmt.Errorf("unknown task type: %s", task.Type)
 			}
 
 			if execErr != nil {
@@ -668,8 +668,8 @@ func (s *Scheduler) handleEngagement(ctx context.Context, jctx *JobContext, sche
 			case <-ctx.Done():
 				return ctx.Err()
 			default:
-				// Execute the action
-				if err := s.executeSocialAction(ctx, &account, action, ""); err != nil {
+				// Execute the action directly with the account
+				if err := s.executeDirectSocialAction(ctx, &account, action, ""); err != nil {
 					log.Printf("Engagement action failed: %v", err)
 				} else {
 					actionCount++
