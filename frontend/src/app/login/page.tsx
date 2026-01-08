@@ -1,12 +1,12 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
-import { Globe, Mail, Lock, Eye, EyeOff, ArrowRight, Zap } from 'lucide-react'
+import { Globe, Mail, Lock, Eye, EyeOff, ArrowRight, Zap, User } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 
-export default function LoginPage() {
+function LoginForm() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const mode = searchParams.get('mode')
@@ -15,6 +15,7 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [formData, setFormData] = useState({
+    name: '',
     email: '',
     password: '',
     confirmPassword: '',
@@ -38,6 +39,18 @@ export default function LoginPage() {
       return
     }
 
+    if (!isLogin && !formData.name) {
+      setError('Please enter your name')
+      setIsLoading(false)
+      return
+    }
+
+    if (!isLogin && formData.password.length < 8) {
+      setError('Password must be at least 8 characters')
+      setIsLoading(false)
+      return
+    }
+
     if (!isLogin && formData.password !== formData.confirmPassword) {
       setError('Passwords do not match')
       setIsLoading(false)
@@ -45,14 +58,15 @@ export default function LoginPage() {
     }
 
     try {
-      const endpoint = isLogin ? '/api/auth/login' : '/api/auth/register'
+      const endpoint = isLogin ? '/api/v1/auth/login' : '/api/v1/auth/register'
+      const body = isLogin 
+        ? { email: formData.email, password: formData.password }
+        : { email: formData.email, password: formData.password, name: formData.name }
+      
       const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'}${endpoint}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email: formData.email,
-          password: formData.password,
-        }),
+        body: JSON.stringify(body),
       })
 
       const data = await response.json()
@@ -61,8 +75,8 @@ export default function LoginPage() {
         throw new Error(data.error || 'Authentication failed')
       }
 
-      // Store token
-      localStorage.setItem('token', data.token)
+      // Store token (backend returns access_token)
+      localStorage.setItem('token', data.access_token)
       
       // Redirect to dashboard
       router.push('/dashboard')
@@ -118,6 +132,24 @@ export default function LoginPage() {
             {error && (
               <div className="p-3 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive text-sm">
                 {error}
+              </div>
+            )}
+
+            {!isLogin && (
+              <div>
+                <label className="block text-sm font-medium mb-2">Name</label>
+                <div className="relative">
+                  <User className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+                  <input
+                    type="text"
+                    value={formData.name}
+                    onChange={(e) =>
+                      setFormData({ ...formData, name: e.target.value })
+                    }
+                    placeholder="John Doe"
+                    className="w-full h-12 pl-10 pr-4 rounded-lg bg-muted border border-input text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                  />
+                </div>
               </div>
             )}
 
@@ -225,5 +257,17 @@ export default function LoginPage() {
         </p>
       </div>
     </div>
+  )
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="h-8 w-8 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
+      </div>
+    }>
+      <LoginForm />
+    </Suspense>
   )
 }
