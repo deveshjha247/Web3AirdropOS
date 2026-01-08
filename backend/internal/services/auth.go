@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"errors"
 	"time"
 
@@ -8,15 +9,22 @@ import (
 	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
 
+	"github.com/web3airdropos/backend/internal/auth"
 	"github.com/web3airdropos/backend/internal/models"
 )
 
 type AuthService struct {
-	container *Container
+	container      *Container
+	productionAuth *auth.AuthService // Production auth with token family rotation
 }
 
 func NewAuthService(c *Container) *AuthService {
 	return &AuthService{container: c}
+}
+
+// SetProductionAuth sets the production auth service for token family rotation
+func (s *AuthService) SetProductionAuth(authService *auth.AuthService) {
+	s.productionAuth = authService
 }
 
 type RegisterRequest struct {
@@ -38,6 +46,35 @@ type AuthResponse struct {
 }
 
 func (s *AuthService) Register(req *RegisterRequest) (*AuthResponse, error) {
+	ctx := context.Background()
+
+	// Use production auth if available
+	if s.productionAuth != nil {
+		result, err := s.productionAuth.Register(ctx, req.Email, req.Password, req.Name, "")
+		if err != nil {
+			return nil, err
+		}
+
+		// Get user from database
+		var user models.User
+		if err := s.container.DB.First(&user, result.UserID).Error; err != nil {
+			return nil, err
+		}
+		user.PasswordHash = ""
+
+		return &AuthResponse{
+			User:         &user,
+			AccessToken:  result.AccessToken,
+			RefreshToken: result.RefreshToken,
+			ExpiresAt:    result.ExpiresAt,
+		}, nil
+	}
+
+	// Fallback to basic auth
+	return s.registerBasic(req)
+}
+
+func (s *AuthService) registerBasic(req *RegisterRequest) (*AuthResponse, error) {
 	// Check if user exists
 	var existing models.User
 	if err := s.container.DB.Where("email = ?", req.Email).First(&existing).Error; err == nil {
@@ -67,6 +104,35 @@ func (s *AuthService) Register(req *RegisterRequest) (*AuthResponse, error) {
 }
 
 func (s *AuthService) Login(req *LoginRequest) (*AuthResponse, error) {
+	ctx := context.Background()
+
+	// Use production auth if available
+	if s.productionAuth != nil {
+		result, err := s.productionAuth.Login(ctx, req.Email, req.Password, "", "")
+		if err != nil {
+			return nil, err
+		}
+
+		// Get user from database
+		var user models.User
+		if err := s.container.DB.First(&user, result.UserID).Error; err != nil {
+			return nil, err
+		}
+		user.PasswordHash = ""
+
+		return &AuthResponse{
+			User:         &user,
+			AccessToken:  result.AccessToken,
+			RefreshToken: result.RefreshToken,
+			ExpiresAt:    result.ExpiresAt,
+		}, nil
+	}
+
+	// Fallback to basic auth
+	return s.loginBasic(req)
+}
+
+func (s *AuthService) loginBasic(req *LoginRequest) (*AuthResponse, error) {
 	var user models.User
 	if err := s.container.DB.Where("email = ?", req.Email).First(&user).Error; err != nil {
 		return nil, errors.New("invalid credentials")
@@ -84,6 +150,35 @@ func (s *AuthService) Login(req *LoginRequest) (*AuthResponse, error) {
 }
 
 func (s *AuthService) RefreshToken(refreshToken string) (*AuthResponse, error) {
+	ctx := context.Background()
+
+	// Use production auth if available
+	if s.productionAuth != nil {
+		result, err := s.productionAuth.RefreshToken(ctx, refreshToken)
+		if err != nil {
+			return nil, err
+		}
+
+		// Get user from database
+		var user models.User
+		if err := s.container.DB.First(&user, result.UserID).Error; err != nil {
+			return nil, err
+		}
+		user.PasswordHash = ""
+
+		return &AuthResponse{
+			User:         &user,
+			AccessToken:  result.AccessToken,
+			RefreshToken: result.RefreshToken,
+			ExpiresAt:    result.ExpiresAt,
+		}, nil
+	}
+
+	// Fallback to basic refresh
+	return s.refreshTokenBasic(refreshToken)
+}
+
+func (s *AuthService) refreshTokenBasic(refreshToken string) (*AuthResponse, error) {
 	claims := &jwt.RegisteredClaims{}
 	token, err := jwt.ParseWithClaims(refreshToken, claims, func(token *jwt.Token) (interface{}, error) {
 		return []byte(s.container.Config.JWTSecret), nil
