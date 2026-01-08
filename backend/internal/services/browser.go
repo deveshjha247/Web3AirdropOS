@@ -20,8 +20,8 @@ import (
 )
 
 type BrowserService struct {
-	container    *Container
-	sessions     map[uuid.UUID]*BrowserSession
+	container       *Container
+	sessions        map[uuid.UUID]*BrowserSession
 	dockerAvailable bool
 }
 
@@ -35,7 +35,23 @@ type BrowserSession struct {
 	WebSocketURL string
 	wsConn       *websocket.Conn
 	cancel       context.CancelFunc
+	Status       SessionStatus
+	CurrentTask  *uuid.UUID
+	IsPaused     bool
 }
+
+// SessionStatus represents browser session states
+type SessionStatus string
+
+const (
+	SessionStatusStarting   SessionStatus = "starting"
+	SessionStatusReady      SessionStatus = "ready"
+	SessionStatusBusy       SessionStatus = "busy"
+	SessionStatusPaused     SessionStatus = "paused"
+	SessionStatusStopping   SessionStatus = "stopping"
+	SessionStatusStopped    SessionStatus = "stopped"
+	SessionStatusFailed     SessionStatus = "failed"
+)
 
 func NewBrowserService(c *Container) *BrowserService {
 	// Check if docker is available
@@ -563,4 +579,341 @@ func (s *BrowserService) GetScreenshot(userID, sessionID uuid.UUID) ([]byte, err
 
 	// Decode base64
 	return io.ReadAll(bytes.NewReader([]byte(dataStr)))
+}
+
+// ========================= Session Lifecycle Management =========================
+
+// SessionManager provides high-level session lifecycle operations
+type SessionManager struct {
+	service *BrowserService
+}
+
+// AttachTask attaches a task execution to a browser session
+func (s *BrowserService) AttachTask(userID, sessionID, taskExecutionID uuid.UUID) error {
+	session, err := s.GetSession(userID, sessionID)
+	if err != nil {
+		return err
+	}
+
+	if session.Status != "ready" {
+		return errors.New("session must be ready to attach a task")
+	}
+
+	// Update DB
+	if err := s.container.DB.Model(session).Update("task_execution_id", taskExecutionID).Error; err != nil {
+		return err
+	}
+
+	// Update in-memory session
+	if memSession, ok := s.sessions[sessionID]; ok {
+		memSession.CurrentTask = &taskExecutionID
+	}
+
+	s.container.WSHub.BroadcastTerminal(userID.String(), ws.TerminalMessage{
+		Level:   "info",
+		Source:  "browser",
+		Message: fmt.Sprintf("Task attached to session %s", sessionID.String()[:8]),
+	})
+
+	return nil
+}
+
+// DetachTask removes task association from a browser session
+func (s *BrowserService) DetachTask(userID, sessionID uuid.UUID) error {
+	session, err := s.GetSession(userID, sessionID)
+	if err != nil {
+		return err
+	}
+
+	// Update DB
+	if err := s.container.DB.Model(session).Update("task_execution_id", nil).Error; err != nil {
+		return err
+	}
+
+	// Update in-memory session
+	if memSession, ok := s.sessions[sessionID]; ok {
+		memSession.CurrentTask = nil
+	}
+
+	return nil
+}
+
+// PauseSession pauses a browser session (keeps container running but marks as paused)
+func (s *BrowserService) PauseSession(userID, sessionID uuid.UUID) error {
+	session, err := s.GetSession(userID, sessionID)
+	if err != nil {
+		return err
+	}
+
+	if session.Status != "ready" && session.Status != "busy" {
+		return errors.New("session must be ready or busy to pause")
+	}
+
+	// Update DB
+	if err := s.container.DB.Model(session).Update("status", "paused").Error; err != nil {
+		return err
+	}
+
+	// Update in-memory session
+	if memSession, ok := s.sessions[sessionID]; ok {
+		memSession.IsPaused = true
+		memSession.Status = SessionStatusPaused
+	}
+
+	s.container.WSHub.BroadcastTerminal(userID.String(), ws.TerminalMessage{
+		Level:   "warn",
+		Source:  "browser",
+		Message: "Session paused: " + sessionID.String()[:8],
+	})
+
+	s.container.WSHub.BroadcastToUser(userID.String(), "browser:paused", map[string]interface{}{
+		"session_id": sessionID.String(),
+	})
+
+	return nil
+}
+
+// ResumeSession resumes a paused browser session
+func (s *BrowserService) ResumeSession(userID, sessionID uuid.UUID) error {
+	session, err := s.GetSession(userID, sessionID)
+	if err != nil {
+		return err
+	}
+
+	if session.Status != "paused" {
+		return errors.New("session must be paused to resume")
+	}
+
+	// Update DB
+	if err := s.container.DB.Model(session).Update("status", "ready").Error; err != nil {
+		return err
+	}
+
+	// Update in-memory session
+	if memSession, ok := s.sessions[sessionID]; ok {
+		memSession.IsPaused = false
+		memSession.Status = SessionStatusReady
+	}
+
+	s.container.WSHub.BroadcastTerminal(userID.String(), ws.TerminalMessage{
+		Level:   "success",
+		Source:  "browser",
+		Message: "Session resumed: " + sessionID.String()[:8],
+	})
+
+	s.container.WSHub.BroadcastToUser(userID.String(), "browser:resumed", map[string]interface{}{
+		"session_id": sessionID.String(),
+	})
+
+	return nil
+}
+
+// NavigateURL opens a URL in the browser session
+func (s *BrowserService) NavigateURL(userID, sessionID uuid.UUID, url string) error {
+	session, err := s.GetSession(userID, sessionID)
+	if err != nil {
+		return err
+	}
+
+	if session.Status != "ready" && session.Status != "busy" {
+		return errors.New("session not ready for navigation")
+	}
+
+	// Update last activity
+	s.container.DB.Model(session).Update("last_activity_at", time.Now())
+
+	// Execute navigation
+	_, err = s.cdpNavigate(session.DebuggerURL, url)
+	if err != nil {
+		return fmt.Errorf("navigation failed: %w", err)
+	}
+
+	s.container.WSHub.BroadcastTerminal(userID.String(), ws.TerminalMessage{
+		Level:   "info",
+		Source:  "browser",
+		Message: "Navigated to: " + url,
+	})
+
+	return nil
+}
+
+// KillSession forcefully terminates a browser session and cleans up resources
+func (s *BrowserService) KillSession(userID, sessionID uuid.UUID) error {
+	session, err := s.GetSession(userID, sessionID)
+	if err != nil {
+		return err
+	}
+
+	// Broadcast stopping status
+	s.container.WSHub.BroadcastTerminal(userID.String(), ws.TerminalMessage{
+		Level:   "warn",
+		Source:  "browser",
+		Message: "Killing session: " + sessionID.String()[:8],
+	})
+
+	// Force stop container
+	if s.dockerAvailable && session.ContainerID != "" {
+		// Force kill with timeout
+		cmd := exec.Command("docker", "kill", session.ContainerID)
+		cmd.Run() // Ignore error - container might already be stopped
+
+		// Remove container forcefully
+		cmd = exec.Command("docker", "rm", "-f", session.ContainerID)
+		cmd.Run()
+	}
+
+	// Update DB status
+	now := time.Now()
+	s.container.DB.Model(session).Updates(map[string]interface{}{
+		"status":     "stopped",
+		"stopped_at": now,
+	})
+
+	// Cleanup in-memory session
+	if memSession, ok := s.sessions[sessionID]; ok {
+		if memSession.cancel != nil {
+			memSession.cancel()
+		}
+		if memSession.wsConn != nil {
+			memSession.wsConn.Close()
+		}
+		delete(s.sessions, sessionID)
+	}
+
+	s.container.WSHub.BroadcastTerminal(userID.String(), ws.TerminalMessage{
+		Level:   "success",
+		Source:  "browser",
+		Message: "Session killed and cleaned up",
+	})
+
+	s.container.WSHub.BroadcastToUser(userID.String(), "browser:killed", map[string]interface{}{
+		"session_id": sessionID.String(),
+	})
+
+	return nil
+}
+
+// GetSessionStatus returns current session status with task info
+func (s *BrowserService) GetSessionStatus(userID, sessionID uuid.UUID) (map[string]interface{}, error) {
+	session, err := s.GetSession(userID, sessionID)
+	if err != nil {
+		return nil, err
+	}
+
+	status := map[string]interface{}{
+		"id":               session.ID.String(),
+		"status":           session.Status,
+		"vnc_url":          session.VNCURL,
+		"debugger_url":     session.DebuggerURL,
+		"started_at":       session.StartedAt,
+		"last_activity_at": session.LastActivityAt,
+	}
+
+	if session.TaskExecutionID != nil {
+		status["task_execution_id"] = session.TaskExecutionID.String()
+	}
+
+	// Check if container is still running
+	if s.dockerAvailable && session.ContainerID != "" {
+		cmd := exec.Command("docker", "inspect", "-f", "{{.State.Running}}", session.ContainerID)
+		output, err := cmd.Output()
+		if err != nil {
+			status["container_running"] = false
+		} else {
+			status["container_running"] = strings.TrimSpace(string(output)) == "true"
+		}
+	}
+
+	return status, nil
+}
+
+// CleanupStaleSessions removes sessions that have been inactive for too long
+func (s *BrowserService) CleanupStaleSessions(maxIdleTime time.Duration) error {
+	var staleSessions []models.BrowserSession
+	threshold := time.Now().Add(-maxIdleTime)
+
+	if err := s.container.DB.Where("status NOT IN (?, ?) AND last_activity_at < ?", 
+		"stopped", "failed", threshold).Find(&staleSessions).Error; err != nil {
+		return err
+	}
+
+	for _, session := range staleSessions {
+		s.container.WSHub.BroadcastTerminal(session.UserID.String(), ws.TerminalMessage{
+			Level:   "warn",
+			Source:  "browser",
+			Message: fmt.Sprintf("Cleaning up stale session: %s", session.ID.String()[:8]),
+		})
+
+		// Kill the session
+		s.KillSession(session.UserID, session.ID)
+	}
+
+	return nil
+}
+
+// StartSessionWithTask creates a session and immediately attaches a task
+func (s *BrowserService) StartSessionWithTask(userID uuid.UUID, profileID uuid.UUID, taskExecutionID uuid.UUID, startURL string) (*models.BrowserSession, error) {
+	// Create the session
+	session, err := s.StartSession(userID, &StartSessionRequest{
+		ProfileID:       profileID,
+		TaskExecutionID: &taskExecutionID,
+		StartURL:        startURL,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return session, nil
+}
+
+// TakeScreenshotProof takes a screenshot and saves it as proof for a task
+func (s *BrowserService) TakeScreenshotProof(userID, sessionID uuid.UUID, taskExecutionID uuid.UUID) (string, error) {
+	screenshotData, err := s.GetScreenshot(userID, sessionID)
+	if err != nil {
+		return "", err
+	}
+
+	// Generate filename
+	timestamp := time.Now().Format("20060102_150405")
+	filename := fmt.Sprintf("proof_%s_%s.png", taskExecutionID.String()[:8], timestamp)
+	
+	// In production, save to S3 or similar
+	// For now, return a placeholder path
+	screenshotPath := "/proofs/" + filename
+
+	// Update task execution with proof
+	s.container.DB.Model(&models.TaskExecution{}).Where("id = ?", taskExecutionID).Updates(map[string]interface{}{
+		"screenshot_path": screenshotPath,
+		"proof_type":      "screenshot",
+		"proof_value":     screenshotPath,
+	})
+
+	s.container.WSHub.BroadcastTerminal(userID.String(), ws.TerminalMessage{
+		Level:   "info",
+		Source:  "browser",
+		Message: "Screenshot captured for proof",
+		Details: map[string]interface{}{
+			"path": screenshotPath,
+			"size": len(screenshotData),
+		},
+	})
+
+	return screenshotPath, nil
+}
+
+// ListActiveSessions returns all active sessions for a user
+func (s *BrowserService) ListActiveSessions(userID uuid.UUID) ([]map[string]interface{}, error) {
+	var sessions []models.BrowserSession
+	if err := s.container.DB.Where("user_id = ? AND status NOT IN (?, ?)", 
+		userID, "stopped", "failed").Find(&sessions).Error; err != nil {
+		return nil, err
+	}
+
+	result := make([]map[string]interface{}, 0, len(sessions))
+	for _, session := range sessions {
+		status, _ := s.GetSessionStatus(userID, session.ID)
+		result = append(result, status)
+	}
+
+	return result, nil
 }

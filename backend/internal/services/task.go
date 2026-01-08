@@ -1,21 +1,47 @@
 package services
 
 import (
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
 
 	"github.com/web3airdropos/backend/internal/models"
+	"github.com/web3airdropos/backend/internal/services/platforms"
 	"github.com/web3airdropos/backend/internal/websocket"
 )
 
 type TaskService struct {
-	container *Container
+	container   *Container
+	adapters    map[string]platforms.PlatformAdapter
+	rateLimiter *RateLimiter
+	audit       *AuditService
 }
 
 func NewTaskService(c *Container) *TaskService {
-	return &TaskService{container: c}
+	return &TaskService{
+		container:   c,
+		adapters:    make(map[string]platforms.PlatformAdapter),
+		rateLimiter: c.RateLimiter,
+		audit:       c.Audit,
+	}
+}
+
+// RegisterAdapter registers a platform adapter
+func (s *TaskService) RegisterAdapter(platform string, adapter platforms.PlatformAdapter) {
+	s.adapters[platform] = adapter
+}
+
+// GetAdapter returns the appropriate adapter for a platform
+func (s *TaskService) GetAdapter(platform string) (platforms.PlatformAdapter, error) {
+	if adapter, ok := s.adapters[platform]; ok {
+		return adapter, nil
+	}
+	return nil, fmt.Errorf("no adapter registered for platform: %s", platform)
 }
 
 type UpdateTaskRequest struct {
@@ -92,9 +118,27 @@ func (s *TaskService) Update(userID, taskID uuid.UUID, req *UpdateTaskRequest) (
 }
 
 func (s *TaskService) Execute(userID, taskID uuid.UUID, req *ExecuteTaskRequest) (*models.TaskExecution, error) {
+	ctx := context.Background()
+	
 	task, err := s.Get(userID, taskID)
 	if err != nil {
 		return nil, err
+	}
+
+	// Generate idempotency key
+	idempotencyKey := s.generateIdempotencyKey(userID, taskID, req)
+	
+	// Check for existing execution with same idempotency key
+	var existingExecution models.TaskExecution
+	if err := s.container.DB.Where("idempotency_key = ?", idempotencyKey).First(&existingExecution).Error; err == nil {
+		// Already executed
+		s.container.WSHub.BroadcastTerminal(userID.String(), websocket.TerminalMessage{
+			Level:   "warn",
+			Source:  "task",
+			Message: "⚠️ Task already executed (idempotency check)",
+			TaskID:  taskID.String(),
+		})
+		return &existingExecution, nil
 	}
 
 	// Check dependencies
@@ -106,14 +150,26 @@ func (s *TaskService) Execute(userID, taskID uuid.UUID, req *ExecuteTaskRequest)
 		}
 	}
 
+	// Acquire rate limit slot (if applicable)
+	if req.AccountID != nil && task.TargetPlatform != "" {
+		allowed, err := s.rateLimiter.CheckRateLimit(ctx, task.TargetPlatform, req.AccountID.String())
+		if err != nil {
+			return nil, fmt.Errorf("rate limit check failed: %w", err)
+		}
+		if !allowed {
+			return nil, errors.New("rate limit exceeded for this platform")
+		}
+	}
+
 	// Create execution record
 	execution := &models.TaskExecution{
-		ID:        uuid.New(),
-		TaskID:    taskID,
-		WalletID:  req.WalletID,
-		AccountID: req.AccountID,
-		Status:    "in_progress",
-		StartedAt: time.Now(),
+		ID:             uuid.New(),
+		TaskID:         taskID,
+		WalletID:       req.WalletID,
+		AccountID:      req.AccountID,
+		Status:         "in_progress",
+		IdempotencyKey: idempotencyKey,
+		StartedAt:      time.Now(),
 	}
 
 	if err := s.container.DB.Create(execution).Error; err != nil {
@@ -130,6 +186,7 @@ func (s *TaskService) Execute(userID, taskID uuid.UUID, req *ExecuteTaskRequest)
 			"type":            task.Type,
 			"target_url":      task.TargetURL,
 			"requires_manual": task.RequiresManual,
+			"idempotency_key": idempotencyKey,
 		},
 	})
 
@@ -156,11 +213,22 @@ func (s *TaskService) Execute(userID, taskID uuid.UUID, req *ExecuteTaskRequest)
 	}
 
 	// Execute based on task type
-	err = s.executeTaskByType(userID, task, execution)
+	proof, err := s.executeTaskByType(ctx, userID, task, execution)
+	
+	// Record rate limit action on success
+	if err == nil && req.AccountID != nil && task.TargetPlatform != "" {
+		s.rateLimiter.RecordAction(ctx, task.TargetPlatform, req.AccountID.String())
+	}
+
 	if err != nil {
 		execution.Status = "failed"
 		execution.ErrorMessage = err.Error()
 		s.container.DB.Save(execution)
+
+		// Log failure to audit
+		if s.audit != nil {
+			s.audit.LogTaskExecution(ctx, execution, task, models.ResultFailed, nil, err)
+		}
 
 		s.container.WSHub.BroadcastTerminal(userID.String(), websocket.TerminalMessage{
 			Level:   "error",
@@ -172,16 +240,33 @@ func (s *TaskService) Execute(userID, taskID uuid.UUID, req *ExecuteTaskRequest)
 		return execution, err
 	}
 
+	// Store proof
+	if proof != nil {
+		execution.ProofType = getProofTypeFromAdapter(proof)
+		execution.ProofValue = getProofValueFromAdapter(proof)
+		execution.PostID = proof.PostID
+		execution.PostURL = proof.PostURL
+	}
+
 	now := time.Now()
 	execution.Status = "completed"
 	execution.CompletedAt = &now
 	s.container.DB.Save(execution)
+
+	// Log success to audit
+	if s.audit != nil {
+		s.audit.LogTaskExecution(ctx, execution, task, models.ResultSuccess, proof, nil)
+	}
 
 	s.container.WSHub.BroadcastTerminal(userID.String(), websocket.TerminalMessage{
 		Level:   "success",
 		Source:  "task",
 		Message: "✅ Task completed: " + task.Name,
 		TaskID:  taskID.String(),
+		Details: map[string]interface{}{
+			"proof_type":  execution.ProofType,
+			"proof_value": execution.ProofValue,
+		},
 	})
 
 	s.container.WSHub.BroadcastTaskUpdate(userID.String(), websocket.TaskStatusUpdate{
@@ -193,30 +278,46 @@ func (s *TaskService) Execute(userID, taskID uuid.UUID, req *ExecuteTaskRequest)
 	return execution, nil
 }
 
-func (s *TaskService) executeTaskByType(userID uuid.UUID, task *models.CampaignTask, execution *models.TaskExecution) error {
+// generateIdempotencyKey creates a unique key for a task execution
+func (s *TaskService) generateIdempotencyKey(userID, taskID uuid.UUID, req *ExecuteTaskRequest) string {
+	data := fmt.Sprintf("%s:%s:", userID.String(), taskID.String())
+	if req.AccountID != nil {
+		data += req.AccountID.String()
+	}
+	if req.WalletID != nil {
+		data += req.WalletID.String()
+	}
+	// Add date to allow re-execution on different days for daily tasks
+	data += time.Now().Format("2006-01-02")
+	
+	hash := sha256.Sum256([]byte(data))
+	return hex.EncodeToString(hash[:])
+}
+
+func (s *TaskService) executeTaskByType(ctx context.Context, userID uuid.UUID, task *models.CampaignTask, execution *models.TaskExecution) (*platforms.ActionProof, error) {
 	switch task.Type {
 	case models.TaskTypeConnect:
-		return s.executeWalletConnect(userID, task, execution)
+		return nil, s.executeWalletConnect(userID, task, execution)
 	case models.TaskTypeTransaction:
-		return s.executeTransaction(userID, task, execution)
+		return nil, s.executeTransaction(userID, task, execution)
 	case models.TaskTypeClaim:
-		return s.executeClaim(userID, task, execution)
+		return nil, s.executeClaim(userID, task, execution)
 	case models.TaskTypeFollow:
-		return s.executeFollow(userID, task, execution)
+		return s.executeFollowWithAdapter(ctx, userID, task, execution)
 	case models.TaskTypeJoin:
-		return s.executeJoin(userID, task, execution)
+		return nil, s.executeJoin(userID, task, execution)
 	case models.TaskTypePost:
-		return s.executePost(userID, task, execution)
+		return s.executePostWithAdapter(ctx, userID, task, execution)
 	case models.TaskTypeReply:
-		return s.executeReply(userID, task, execution)
+		return s.executeReplyWithAdapter(ctx, userID, task, execution)
 	case models.TaskTypeLike:
-		return s.executeLike(userID, task, execution)
+		return s.executeLikeWithAdapter(ctx, userID, task, execution)
 	case models.TaskTypeRecast:
-		return s.executeRecast(userID, task, execution)
+		return s.executeRecastWithAdapter(ctx, userID, task, execution)
 	case models.TaskTypeVerify:
-		return s.executeVerify(userID, task, execution)
+		return nil, s.executeVerify(userID, task, execution)
 	default:
-		return errors.New("unsupported task type")
+		return nil, errors.New("unsupported task type")
 	}
 }
 
@@ -250,14 +351,33 @@ func (s *TaskService) executeClaim(userID uuid.UUID, task *models.CampaignTask, 
 }
 
 func (s *TaskService) executeFollow(userID uuid.UUID, task *models.CampaignTask, execution *models.TaskExecution) error {
-	// Follow a user on platform
+	// Legacy - use executeFollowWithAdapter instead
+	return errors.New("use executeFollowWithAdapter")
+}
+
+// executeFollowWithAdapter executes a follow using the platform adapter
+func (s *TaskService) executeFollowWithAdapter(ctx context.Context, userID uuid.UUID, task *models.CampaignTask, execution *models.TaskExecution) (*platforms.ActionProof, error) {
 	if execution.AccountID == nil {
-		return errors.New("account required for follow task")
+		return nil, errors.New("account required for follow task")
 	}
 
+	// Get the platform account
 	var account models.PlatformAccount
 	if err := s.container.DB.First(&account, execution.AccountID).Error; err != nil {
-		return err
+		return nil, err
+	}
+
+	// Get adapter
+	adapter, err := s.GetAdapter(task.TargetPlatform)
+	if err != nil {
+		// Fallback: log and return nil (manual execution needed)
+		s.container.WSHub.BroadcastTerminal(userID.String(), websocket.TerminalMessage{
+			Level:   "warn",
+			Source:  "task",
+			Message: fmt.Sprintf("No adapter for %s, requires manual execution", task.TargetPlatform),
+			TaskID:  task.ID.String(),
+		})
+		return nil, nil
 	}
 
 	s.container.WSHub.BroadcastTerminal(userID.String(), websocket.TerminalMessage{
@@ -268,19 +388,43 @@ func (s *TaskService) executeFollow(userID uuid.UUID, task *models.CampaignTask,
 		AccountID: account.ID.String(),
 	})
 
-	// TODO: Execute follow via platform API or browser
-	return nil
+	// Acquire account lock (one action at a time per account)
+	lock, err := s.rateLimiter.AccountLock(ctx, execution.AccountID.String(), "follow")
+	if err != nil {
+		return nil, fmt.Errorf("could not acquire account lock: %w", err)
+	}
+	defer lock.Release(ctx)
+
+	// Execute follow via adapter
+	return adapter.Follow(ctx, task.TargetAccount)
 }
 
 func (s *TaskService) executeJoin(userID uuid.UUID, task *models.CampaignTask, execution *models.TaskExecution) error {
-	// Join a group/community
+	// Join a group/community - typically requires browser
 	return nil
 }
 
 func (s *TaskService) executePost(userID uuid.UUID, task *models.CampaignTask, execution *models.TaskExecution) error {
-	// Create a post
+	// Legacy - use executePostWithAdapter
+	return errors.New("use executePostWithAdapter")
+}
+
+// executePostWithAdapter creates a post using the platform adapter
+func (s *TaskService) executePostWithAdapter(ctx context.Context, userID uuid.UUID, task *models.CampaignTask, execution *models.TaskExecution) (*platforms.ActionProof, error) {
 	if execution.AccountID == nil {
-		return errors.New("account required for post task")
+		return nil, errors.New("account required for post task")
+	}
+
+	// Get content from task or generate
+	content := task.RequiredAction // Placeholder - should get from content draft
+	if content == "" {
+		return nil, errors.New("no content specified for post")
+	}
+
+	// Get adapter
+	adapter, err := s.GetAdapter(task.TargetPlatform)
+	if err != nil {
+		return nil, nil // Manual execution needed
 	}
 
 	s.container.WSHub.BroadcastTerminal(userID.String(), websocket.TerminalMessage{
@@ -290,23 +434,110 @@ func (s *TaskService) executePost(userID uuid.UUID, task *models.CampaignTask, e
 		TaskID:  task.ID.String(),
 	})
 
-	// TODO: Create post via platform API
-	return nil
+	// Acquire account lock
+	lock, err := s.rateLimiter.AccountLock(ctx, execution.AccountID.String(), "post")
+	if err != nil {
+		return nil, fmt.Errorf("could not acquire account lock: %w", err)
+	}
+	defer lock.Release(ctx)
+
+	// Execute via adapter
+	return adapter.Post(ctx, content)
 }
 
 func (s *TaskService) executeReply(userID uuid.UUID, task *models.CampaignTask, execution *models.TaskExecution) error {
-	// Reply to a post
-	return nil
+	return errors.New("use executeReplyWithAdapter")
+}
+
+// executeReplyWithAdapter replies to a post using the platform adapter
+func (s *TaskService) executeReplyWithAdapter(ctx context.Context, userID uuid.UUID, task *models.CampaignTask, execution *models.TaskExecution) (*platforms.ActionProof, error) {
+	if execution.AccountID == nil {
+		return nil, errors.New("account required for reply task")
+	}
+
+	content := task.RequiredAction
+	if content == "" {
+		return nil, errors.New("no content specified for reply")
+	}
+
+	adapter, err := s.GetAdapter(task.TargetPlatform)
+	if err != nil {
+		return nil, nil
+	}
+
+	// Acquire account lock
+	lock, err := s.rateLimiter.AccountLock(ctx, execution.AccountID.String(), "reply")
+	if err != nil {
+		return nil, fmt.Errorf("could not acquire account lock: %w", err)
+	}
+	defer lock.Release(ctx)
+
+	// TargetID is the post ID to reply to
+	return adapter.Reply(ctx, task.TargetID, content)
 }
 
 func (s *TaskService) executeLike(userID uuid.UUID, task *models.CampaignTask, execution *models.TaskExecution) error {
-	// Like a post
-	return nil
+	return errors.New("use executeLikeWithAdapter")
+}
+
+// executeLikeWithAdapter likes a post using the platform adapter
+func (s *TaskService) executeLikeWithAdapter(ctx context.Context, userID uuid.UUID, task *models.CampaignTask, execution *models.TaskExecution) (*platforms.ActionProof, error) {
+	if execution.AccountID == nil {
+		return nil, errors.New("account required for like task")
+	}
+
+	adapter, err := s.GetAdapter(task.TargetPlatform)
+	if err != nil {
+		return nil, nil
+	}
+
+	s.container.WSHub.BroadcastTerminal(userID.String(), websocket.TerminalMessage{
+		Level:   "info",
+		Source:  "task",
+		Message: "Liking post on " + task.TargetPlatform,
+		TaskID:  task.ID.String(),
+	})
+
+	// Acquire account lock
+	lock, err := s.rateLimiter.AccountLock(ctx, execution.AccountID.String(), "like")
+	if err != nil {
+		return nil, fmt.Errorf("could not acquire account lock: %w", err)
+	}
+	defer lock.Release(ctx)
+
+	return adapter.Like(ctx, task.TargetID)
 }
 
 func (s *TaskService) executeRecast(userID uuid.UUID, task *models.CampaignTask, execution *models.TaskExecution) error {
-	// Recast/retweet a post
-	return nil
+	return errors.New("use executeRecastWithAdapter")
+}
+
+// executeRecastWithAdapter reposts/recasts using the platform adapter
+func (s *TaskService) executeRecastWithAdapter(ctx context.Context, userID uuid.UUID, task *models.CampaignTask, execution *models.TaskExecution) (*platforms.ActionProof, error) {
+	if execution.AccountID == nil {
+		return nil, errors.New("account required for recast task")
+	}
+
+	adapter, err := s.GetAdapter(task.TargetPlatform)
+	if err != nil {
+		return nil, nil
+	}
+
+	s.container.WSHub.BroadcastTerminal(userID.String(), websocket.TerminalMessage{
+		Level:   "info",
+		Source:  "task",
+		Message: "Recasting post on " + task.TargetPlatform,
+		TaskID:  task.ID.String(),
+	})
+
+	// Acquire account lock
+	lock, err := s.rateLimiter.AccountLock(ctx, execution.AccountID.String(), "recast")
+	if err != nil {
+		return nil, fmt.Errorf("could not acquire account lock: %w", err)
+	}
+	defer lock.Release(ctx)
+
+	return adapter.Repost(ctx, task.TargetID)
 }
 
 func (s *TaskService) executeVerify(userID uuid.UUID, task *models.CampaignTask, execution *models.TaskExecution) error {
@@ -372,4 +603,43 @@ func (s *TaskService) GetExecutions(userID, taskID uuid.UUID) ([]models.TaskExec
 	}
 
 	return executions, nil
+}
+
+// Helper functions
+func getProofTypeFromAdapter(proof *platforms.ActionProof) string {
+	if proof.TxHash != "" {
+		return "tx_hash"
+	}
+	if proof.CastHash != "" {
+		return "cast_hash"
+	}
+	if proof.PostURL != "" {
+		return "post_url"
+	}
+	if proof.ScreenshotPath != "" {
+		return "screenshot"
+	}
+	if proof.PostID != "" {
+		return "post_id"
+	}
+	return ""
+}
+
+func getProofValueFromAdapter(proof *platforms.ActionProof) string {
+	if proof.TxHash != "" {
+		return proof.TxHash
+	}
+	if proof.CastHash != "" {
+		return proof.CastHash
+	}
+	if proof.PostURL != "" {
+		return proof.PostURL
+	}
+	if proof.ScreenshotPath != "" {
+		return proof.ScreenshotPath
+	}
+	if proof.PostID != "" {
+		return proof.PostID
+	}
+	return ""
 }
