@@ -292,7 +292,11 @@ npm run dev
 ## 🔒 Security
 
 - **JWT Authentication**: Secure API access
-- **Encrypted Storage**: Private keys encrypted at rest
+- **Encrypted Storage**: Private keys encrypted at rest (AES-256)
+- **Distributed Locks**: One action at a time per account/wallet
+- **Rate Limiting**: Platform-specific rate limits enforced
+- **Idempotency Keys**: Prevents duplicate task executions
+- **Audit Logging**: Complete action history with proofs
 - **Proxy Isolation**: Network-level separation
 - **Browser Profiles**: Isolated sessions
 
@@ -303,30 +307,71 @@ npm run dev
 - Tags & Groups
 - Transaction history
 - Campaign assignments
+- Wallet locking (one tx at a time)
 
 ### Platform Account
-- Multi-platform support
+- Multi-platform support (Farcaster, Telegram, Twitter)
 - Credentials storage
 - Wallet linking
-- Sync status
+- Account locking (one action at a time)
 
 ### Campaign
 - Platform type (Galxe, Zealy, etc.)
 - Task management
 - Wallet assignments
 - Progress tracking
+- Idempotency protection
 
-### Browser Profile
-- Fingerprint data
-- Proxy assignment
-- Cookie storage
-- Session management
+### Task Execution
+- Idempotency key (prevents duplicates)
+- Proof system (post_url, tx_hash, screenshot)
+- Status tracking
+- Audit log linking
+
+### Content Draft
+- AI-generated content
+- Approval workflow (Draft → Approve → Publish)
+- Platform-specific formatting
+- Scheduled publishing
+
+### Browser Session
+- Lifecycle management (Create → Attach → Pause → Kill)
+- Task attachment
+- Screenshot proofs
+- VNC integration
+
+### Audit Log
+- Complete action history
+- 30+ action types
+- Proof storage
+- Request/Response logging
+- Idempotency tracking
 
 ### Automation Job
 - Cron scheduling
 - Multiple job types
 - Logging & monitoring
 - Start/Stop control
+
+## ⚡ Platform Adapters
+
+| Platform | API | Supported Actions |
+|----------|-----|-------------------|
+| Farcaster | Neynar v2 | Follow, Like, Recast, Post, Reply, Quote |
+| Telegram | Bot API | Post, Reply, Forward, Join Chat |
+| Twitter | REST API* | Skeleton (Browser recommended) |
+
+*Twitter API has significant costs - browser automation is recommended for most use cases.
+
+## 🔐 Rate Limits
+
+| Platform | Default Limit |
+|----------|---------------|
+| Farcaster | 20 actions/minute |
+| Telegram | 25 actions/second |
+| Twitter | 15 actions/15 minutes |
+
+Rate limits are enforced via Redis sliding window algorithm with distributed locks.
 
 ## 🤝 Contributing
 
