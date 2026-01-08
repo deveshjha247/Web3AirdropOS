@@ -1,4 +1,4 @@
-# Crypto Automation System - Development Instructions
+# Web3AirdropOS - Development Instructions
 
 ## Project Overview
 All-in-One Crypto Automation + Operations System with:
@@ -20,8 +20,8 @@ All-in-One Crypto Automation + Operations System with:
 
 ## Project Structure
 ```
-farcaster/
-├── backend/           # Go backend
+web3airdropos/
+├── backend/           # Go backend (github.com/web3airdropos/backend)
 ├── ai-service/        # Python AI microservice
 ├── frontend/          # Next.js dashboard
 ├── browser-service/   # Chromium container
