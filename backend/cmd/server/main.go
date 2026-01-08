@@ -199,6 +199,3 @@ func getEnvOrDefault(key, defaultValue string) string {
 	}
 	return defaultValue
 }
-
-// Import for validateConfig
-import "github.com/rs/zerolog"

@@ -15,12 +15,12 @@ import (
 )
 
 type Server struct {
-	router      *gin.Engine
-	config      *config.Config
-	db          *gorm.DB
-	redis       *redis.Client
-	wsHub       *websocket.Hub
-	services    *services.Container
+	router   *gin.Engine
+	config   *config.Config
+	db       *gorm.DB
+	redis    *redis.Client
+	wsHub    *websocket.Hub
+	services *services.Container
 }
 
 func NewServer(cfg *config.Config, db *gorm.DB, redis *redis.Client, wsHub *websocket.Hub) *Server {
@@ -43,7 +43,7 @@ func NewServer(cfg *config.Config, db *gorm.DB, redis *redis.Client, wsHub *webs
 func (s *Server) setupRoutes() {
 	// CORS middleware
 	s.router.Use(middleware.CORS())
-	
+
 	// Health check
 	s.router.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
@@ -208,6 +208,11 @@ func (s *Server) setupRoutes() {
 			websocket.ServeWs(s.wsHub, c.Writer, c.Request, s.config.JWTSecret)
 		})
 	}
+}
+
+// Router returns the underlying gin.Engine
+func (s *Server) Router() *gin.Engine {
+	return s.router
 }
 
 func (s *Server) Run(addr string) error {
