@@ -39,15 +39,18 @@ func Migrate(db *gorm.DB) error {
 	err := db.AutoMigrate(
 		// Core models
 		&models.User{},
+		&models.Session{},
 		
 		// Wallet models
 		&models.Wallet{},
+		&models.WalletTag{},
 		&models.WalletGroup{},
 		&models.Transaction{},
 		
 		// Platform account models
 		&models.PlatformAccount{},
 		&models.AccountActivity{},
+		&models.Proxy{},
 		
 		// Campaign models
 		&models.Campaign{},
@@ -65,6 +68,7 @@ func Migrate(db *gorm.DB) error {
 		// Browser session models
 		&models.BrowserSession{},
 		&models.BrowserProfile{},
+		&models.BrowserAction{},
 	)
 	
 	if err != nil {
