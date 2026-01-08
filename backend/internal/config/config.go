@@ -37,6 +37,9 @@ type Config struct {
 
 	// Blockchain Explorer APIs
 	BlockchairAPIKey string
+
+	// Storage
+	ProofStoragePath string // Path for storing proof screenshots
 }
 
 func Load() *Config {
@@ -73,6 +76,9 @@ func Load() *Config {
 
 		// Blockchain Explorer APIs
 		BlockchairAPIKey: getEnv("BLOCKCHAIR_API_KEY", "G___21MVuo36XwaAt1fKa5j4rrB9gyKE"),
+
+		// Storage
+		ProofStoragePath: getEnv("PROOF_STORAGE_PATH", "./storage/proofs"),
 	}
 }
 

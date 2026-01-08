@@ -8,7 +8,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -877,8 +879,24 @@ func (s *BrowserService) TakeScreenshotProof(userID, sessionID uuid.UUID, taskEx
 	timestamp := time.Now().Format("20060102_150405")
 	filename := fmt.Sprintf("proof_%s_%s.png", taskExecutionID.String()[:8], timestamp)
 	
-	// In production, save to S3 or similar
-	// For now, return a placeholder path
+	// Save screenshot to configured storage path
+	storagePath := s.container.Config.ProofStoragePath
+	if storagePath == "" {
+		storagePath = "./storage/proofs"
+	}
+	
+	// Ensure directory exists
+	if err := os.MkdirAll(storagePath, 0755); err != nil {
+		return "", fmt.Errorf("failed to create storage directory: %w", err)
+	}
+	
+	// Save file
+	filePath := filepath.Join(storagePath, filename)
+	if err := os.WriteFile(filePath, screenshotData, 0644); err != nil {
+		return "", fmt.Errorf("failed to save screenshot: %w", err)
+	}
+	
+	// Use relative path for database storage
 	screenshotPath := "/proofs/" + filename
 
 	// Update task execution with proof

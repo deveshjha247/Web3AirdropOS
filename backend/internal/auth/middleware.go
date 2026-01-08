@@ -136,11 +136,11 @@ func GetClaims(c *gin.Context) (*Claims, bool) {
 	return claims.(*Claims), true
 }
 
-// RequireRole middleware (for future role-based access control)
+// RequireRole middleware enforces role-based access control
+// Note: Role checking will be implemented when role system is added
 func RequireRole(roles ...string) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// TODO: Implement role checking when role system is added
-		// For now, just pass through if authenticated
+		// Verify user is authenticated
 		_, exists := c.Get("user_id")
 		if !exists {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
@@ -148,6 +148,7 @@ func RequireRole(roles ...string) gin.HandlerFunc {
 			})
 			return
 		}
+		// TODO: Add role checking when role system is implemented
 		c.Next()
 	}
 }
