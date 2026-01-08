@@ -13,27 +13,34 @@ interface TerminalLine {
 }
 
 export function Terminal() {
-  const [lines, setLines] = useState<TerminalLine[]>([
-    {
-      id: '1',
-      timestamp: new Date().toISOString(),
-      level: 'info',
-      message: 'Web3AirdropOS Terminal initialized',
-    },
-    {
-      id: '2',
-      timestamp: new Date().toISOString(),
-      level: 'success',
-      message: 'Connected to backend service',
-    },
-    {
-      id: '3',
-      timestamp: new Date().toISOString(),
-      level: 'info',
-      message: 'Listening for real-time updates...',
-    },
-  ])
+  const [lines, setLines] = useState<TerminalLine[]>([])
+  const [mounted, setMounted] = useState(false)
   const terminalRef = useRef<HTMLDivElement>(null)
+
+  // Initialize on client-side only to prevent hydration mismatch
+  useEffect(() => {
+    setMounted(true)
+    setLines([
+      {
+        id: '1',
+        timestamp: new Date().toISOString(),
+        level: 'info',
+        message: 'Web3AirdropOS Terminal initialized',
+      },
+      {
+        id: '2',
+        timestamp: new Date().toISOString(),
+        level: 'success',
+        message: 'Connected to backend service',
+      },
+      {
+        id: '3',
+        timestamp: new Date().toISOString(),
+        level: 'info',
+        message: 'Listening for real-time updates...',
+      },
+    ])
+  }, [])
 
   // Auto-scroll to bottom
   useEffect(() => {
@@ -44,6 +51,8 @@ export function Terminal() {
 
   // WebSocket connection for real-time logs
   useEffect(() => {
+    if (!mounted) return
+    
     const wsUrl = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8080'
     let ws: WebSocket | null = null
 
@@ -120,7 +129,7 @@ export function Terminal() {
     return () => {
       ws?.close()
     }
-  }, [])
+  }, [mounted])
 
   const clearTerminal = () => {
     setLines([
@@ -175,7 +184,7 @@ export function Terminal() {
           ref={terminalRef}
           className="terminal h-64 overflow-auto bg-black/50 p-4 rounded-b-lg"
         >
-          {lines.map((line) => (
+          {mounted && lines.map((line) => (
             <div key={line.id} className={`terminal-line ${line.level}`}>
               <span className="text-muted-foreground">
                 [{formatTime(line.timestamp)}]
@@ -183,6 +192,12 @@ export function Terminal() {
               <span className={levelColors[line.level]}>{line.message}</span>
             </div>
           ))}
+          {!mounted && (
+            <div className="terminal-line info">
+              <span className="text-muted-foreground">[--:--:--]</span>{' '}
+              <span className="text-blue-400">Loading terminal...</span>
+            </div>
+          )}
         </div>
       </CardContent>
     </Card>
