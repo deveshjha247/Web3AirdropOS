@@ -390,7 +390,7 @@ func (s *ProductionServer) storeSecret() gin.HandlerFunc {
 		var req struct {
 			Name     string                 `json:"name" binding:"required"`
 			Value    string                 `json:"value" binding:"required"`
-			Type     vault.SecretType       `json:"type" binding:"required"`
+			KeyType  vault.SecretType       `json:"key_type" binding:"required"`
 			Metadata map[string]interface{} `json:"metadata"`
 		}
 		if err := c.ShouldBindJSON(&req); err != nil {
@@ -398,7 +398,7 @@ func (s *ProductionServer) storeSecret() gin.HandlerFunc {
 			return
 		}
 
-		secret, err := s.container.Vault.Store(c.Request.Context(), userID, req.Name, req.Value, req.Type, req.Metadata)
+		secret, err := s.container.Vault.Store(c.Request.Context(), userID, req.Name, req.Value, req.KeyType, req.Metadata)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
@@ -413,9 +413,9 @@ func (s *ProductionServer) storeSecret() gin.HandlerFunc {
 		})
 
 		c.JSON(http.StatusCreated, gin.H{
-			"id":   secret.ID,
-			"name": secret.Name,
-			"type": secret.KeyType,
+			"id":       secret.ID,
+			"name":     secret.Name,
+			"key_type": secret.KeyType,
 		})
 	}
 }
