@@ -34,8 +34,10 @@ type LoginRequest struct {
 }
 
 type AuthResponse struct {
-	Token string `json:"token"`
-	User  User   `json:"user"`
+	AccessToken  string    `json:"access_token"`
+	RefreshToken string    `json:"refresh_token"`
+	ExpiresAt    time.Time `json:"expires_at"`
+	User         User      `json:"user"`
 }
 
 type ErrorResponse struct {
@@ -47,7 +49,7 @@ func enableCORS(w http.ResponseWriter, r *http.Request) bool {
 	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
 	w.Header().Set("Access-Control-Allow-Credentials", "true")
-	
+
 	if r.Method == "OPTIONS" {
 		w.WriteHeader(http.StatusOK)
 		return true
@@ -110,7 +112,7 @@ func registerHandler(w http.ResponseWriter, r *http.Request) {
 	users[strings.ToLower(req.Email)] = user
 
 	// Generate token
-	token, err := generateToken(user.ID)
+	accessToken, err := generateToken(user.ID)
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
@@ -118,11 +120,16 @@ func registerHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	refreshToken, _ := generateToken(user.ID)
+	expiresAt := time.Now().Add(24 * time.Hour)
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(AuthResponse{
-		Token: token,
-		User:  user,
+		AccessToken:  accessToken,
+		RefreshToken: refreshToken,
+		ExpiresAt:    expiresAt,
+		User:         user,
 	})
 
 	log.Printf("✅ User registered: %s", req.Email)
@@ -151,7 +158,7 @@ func loginHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Generate token
-	token, err := generateToken(user.ID)
+	accessToken, err := generateToken(user.ID)
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
@@ -159,10 +166,15 @@ func loginHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	refreshToken, _ := generateToken(user.ID)
+	expiresAt := time.Now().Add(24 * time.Hour)
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(AuthResponse{
-		Token: token,
-		User:  user,
+		AccessToken:  accessToken,
+		RefreshToken: refreshToken,
+		ExpiresAt:    expiresAt,
+		User:         user,
 	})
 
 	log.Printf("✅ User logged in: %s", req.Email)
@@ -183,7 +195,7 @@ func meHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	tokenString := strings.TrimPrefix(authHeader, "Bearer ")
-	
+
 	// Parse token
 	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
 		return jwtSecret, nil
@@ -251,7 +263,7 @@ func main() {
 	log.Println("  POST /api/auth/register - Register new user")
 	log.Println("  POST /api/auth/login    - Login")
 	log.Println("  GET  /api/auth/me       - Get current user")
-	
+
 	if err := http.ListenAndServe(":8080", nil); err != nil {
 		log.Fatal(err)
 	}
