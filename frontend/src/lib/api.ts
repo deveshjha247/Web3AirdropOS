@@ -33,114 +33,154 @@ api.interceptors.response.use(
 // Auth
 export const authAPI = {
   login: (email: string, password: string) =>
-    api.post('/api/auth/login', { email, password }),
-  register: (email: string, password: string) =>
-    api.post('/api/auth/register', { email, password }),
-  me: () => api.get('/api/auth/me'),
+    api.post('/api/v1/auth/login', { email, password }),
+  register: (email: string, password: string, name: string) =>
+    api.post('/api/v1/auth/register', { email, password, name }),
+  me: () => api.get('/api/v1/auth/me'),
+  refresh: (refreshToken: string) =>
+    api.post('/api/v1/auth/refresh', { refresh_token: refreshToken }),
 }
 
 // Wallets
 export const walletsAPI = {
-  list: () => api.get('/api/wallets'),
-  get: (id: string) => api.get(`/api/wallets/${id}`),
-  create: (data: any) => api.post('/api/wallets', data),
-  update: (id: string, data: any) => api.put(`/api/wallets/${id}`, data),
-  delete: (id: string) => api.delete(`/api/wallets/${id}`),
-  import: (data: any) => api.post('/api/wallets/import', data),
-  sync: (id: string) => api.post(`/api/wallets/${id}/sync`),
-  groups: () => api.get('/api/wallets/groups'),
-  tags: () => api.get('/api/wallets/tags'),
+  list: () => api.get('/api/v1/wallets'),
+  get: (id: string) => api.get(`/api/v1/wallets/${id}`),
+  create: (data: any) => api.post('/api/v1/wallets', data),
+  update: (id: string, data: any) => api.put(`/api/v1/wallets/${id}`, data),
+  delete: (id: string) => api.delete(`/api/v1/wallets/${id}`),
+  import: (data: any) => api.post('/api/v1/wallets/import', data),
+  bulkCreate: (data: any) => api.post('/api/v1/wallets/bulk', data),
+  getBalance: (id: string) => api.get(`/api/v1/wallets/${id}/balance`),
+  getTransactions: (id: string) => api.get(`/api/v1/wallets/${id}/transactions`),
+}
+
+// Wallet Groups
+export const walletGroupsAPI = {
+  list: () => api.get('/api/v1/wallet-groups'),
+  create: (data: any) => api.post('/api/v1/wallet-groups', data),
+  update: (id: string, data: any) => api.put(`/api/v1/wallet-groups/${id}`, data),
+  delete: (id: string) => api.delete(`/api/v1/wallet-groups/${id}`),
+  addWallets: (id: string, walletIds: string[]) =>
+    api.post(`/api/v1/wallet-groups/${id}/wallets`, { wallet_ids: walletIds }),
+  removeWallets: (id: string, walletIds: string[]) =>
+    api.delete(`/api/v1/wallet-groups/${id}/wallets`, { data: { wallet_ids: walletIds } }),
 }
 
 // Accounts
 export const accountsAPI = {
-  list: () => api.get('/api/accounts'),
-  get: (id: string) => api.get(`/api/accounts/${id}`),
-  create: (data: any) => api.post('/api/accounts', data),
-  update: (id: string, data: any) => api.put(`/api/accounts/${id}`, data),
-  delete: (id: string) => api.delete(`/api/accounts/${id}`),
+  list: () => api.get('/api/v1/accounts'),
+  get: (id: string) => api.get(`/api/v1/accounts/${id}`),
+  create: (data: any) => api.post('/api/v1/accounts', data),
+  update: (id: string, data: any) => api.put(`/api/v1/accounts/${id}`, data),
+  delete: (id: string) => api.delete(`/api/v1/accounts/${id}`),
+  getActivities: (id: string) => api.get(`/api/v1/accounts/${id}/activities`),
   linkWallet: (id: string, walletId: string) =>
-    api.post(`/api/accounts/${id}/link-wallet`, { wallet_id: walletId }),
+    api.post(`/api/v1/accounts/${id}/link-wallet`, { wallet_id: walletId }),
+  sync: (id: string) => api.post(`/api/v1/accounts/${id}/sync`),
 }
 
 // Campaigns
 export const campaignsAPI = {
-  list: () => api.get('/api/campaigns'),
-  get: (id: string) => api.get(`/api/campaigns/${id}`),
-  create: (data: any) => api.post('/api/campaigns', data),
-  update: (id: string, data: any) => api.put(`/api/campaigns/${id}`, data),
-  delete: (id: string) => api.delete(`/api/campaigns/${id}`),
-  tasks: (id: string) => api.get(`/api/campaigns/${id}/tasks`),
+  list: () => api.get('/api/v1/campaigns'),
+  get: (id: string) => api.get(`/api/v1/campaigns/${id}`),
+  create: (data: any) => api.post('/api/v1/campaigns', data),
+  update: (id: string, data: any) => api.put(`/api/v1/campaigns/${id}`, data),
+  delete: (id: string) => api.delete(`/api/v1/campaigns/${id}`),
+  getTasks: (id: string) => api.get(`/api/v1/campaigns/${id}/tasks`),
+  addTask: (id: string, data: any) => api.post(`/api/v1/campaigns/${id}/tasks`, data),
   execute: (id: string, walletIds: string[]) =>
-    api.post(`/api/campaigns/${id}/execute`, { wallet_ids: walletIds }),
-  progress: (id: string) => api.get(`/api/campaigns/${id}/progress`),
+    api.post(`/api/v1/campaigns/${id}/execute`, { wallet_ids: walletIds }),
+  getProgress: (id: string) => api.get(`/api/v1/campaigns/${id}/progress`),
 }
 
 // Tasks
 export const tasksAPI = {
+  get: (id: string) => api.get(`/api/v1/tasks/${id}`),
+  update: (id: string, data: any) => api.put(`/api/v1/tasks/${id}`, data),
   execute: (id: string, walletId: string) =>
-    api.post(`/api/tasks/${id}/execute`, { wallet_id: walletId }),
-  continue: (executionId: string, data?: any) =>
-    api.post(`/api/tasks/executions/${executionId}/continue`, data),
-  executions: (id: string) => api.get(`/api/tasks/${id}/executions`),
+    api.post(`/api/v1/tasks/${id}/execute`, { wallet_id: walletId }),
+  continue: (id: string, data?: any) =>
+    api.post(`/api/v1/tasks/${id}/continue`, data),
+  getExecutions: (id: string) => api.get(`/api/v1/tasks/${id}/executions`),
 }
 
 // Browser
 export const browserAPI = {
-  profiles: () => api.get('/api/browser/profiles'),
-  createProfile: (data: any) => api.post('/api/browser/profiles', data),
-  deleteProfile: (id: string) => api.delete(`/api/browser/profiles/${id}`),
-  sessions: () => api.get('/api/browser/sessions'),
-  createSession: (profileId: string) =>
-    api.post('/api/browser/sessions', { profile_id: profileId }),
-  closeSession: (id: string) => api.delete(`/api/browser/sessions/${id}`),
-  action: (sessionId: string, action: any) =>
-    api.post(`/api/browser/sessions/${sessionId}/action`, action),
-  screenshot: (sessionId: string) =>
-    api.get(`/api/browser/sessions/${sessionId}/screenshot`),
+  listProfiles: () => api.get('/api/v1/browser/profiles'),
+  createProfile: (data: any) => api.post('/api/v1/browser/profiles', data),
+  deleteProfile: (id: string) => api.delete(`/api/v1/browser/profiles/${id}`),
+  listSessions: () => api.get('/api/v1/browser/sessions'),
+  getSession: (id: string) => api.get(`/api/v1/browser/sessions/${id}`),
+  startSession: (data: any) => api.post('/api/v1/browser/sessions', data),
+  stopSession: (id: string) => api.delete(`/api/v1/browser/sessions/${id}`),
+  executeAction: (sessionId: string, action: any) =>
+    api.post(`/api/v1/browser/sessions/${sessionId}/action`, action),
+  getScreenshot: (sessionId: string) =>
+    api.get(`/api/v1/browser/sessions/${sessionId}/screenshot`),
+  getTerminalOutput: (sessionId: string) =>
+    api.get(`/api/v1/browser/sessions/${sessionId}/terminal`),
 }
 
-// Content
+// Content / AI
 export const contentAPI = {
-  generate: (data: any) => api.post('/api/content/generate', data),
-  drafts: () => api.get('/api/content/drafts'),
-  createDraft: (data: any) => api.post('/api/content/drafts', data),
+  generate: (data: any) => api.post('/api/v1/content/generate', data),
+  listDrafts: () => api.get('/api/v1/content/drafts'),
+  getDraft: (id: string) => api.get(`/api/v1/content/drafts/${id}`),
+  createDraft: (data: any) => api.post('/api/v1/content/drafts', data),
   updateDraft: (id: string, data: any) =>
-    api.put(`/api/content/drafts/${id}`, data),
-  deleteDraft: (id: string) => api.delete(`/api/content/drafts/${id}`),
+    api.put(`/api/v1/content/drafts/${id}`, data),
+  deleteDraft: (id: string) => api.delete(`/api/v1/content/drafts/${id}`),
+  approveDraft: (id: string) => api.post(`/api/v1/content/drafts/${id}/approve`),
+  rejectDraft: (id: string) => api.post(`/api/v1/content/drafts/${id}/reject`),
   schedule: (id: string, data: any) =>
-    api.post(`/api/content/drafts/${id}/schedule`, data),
-  engagementPlan: (data: any) => api.post('/api/content/engagement-plan', data),
+    api.post(`/api/v1/content/drafts/${id}/schedule`, data),
+  listScheduled: () => api.get('/api/v1/content/scheduled'),
 }
 
-// Jobs
+// Automation Jobs
 export const jobsAPI = {
-  list: () => api.get('/api/jobs'),
-  get: (id: string) => api.get(`/api/jobs/${id}`),
-  create: (data: any) => api.post('/api/jobs', data),
-  update: (id: string, data: any) => api.put(`/api/jobs/${id}`, data),
-  delete: (id: string) => api.delete(`/api/jobs/${id}`),
-  start: (id: string) => api.post(`/api/jobs/${id}/start`),
-  stop: (id: string) => api.post(`/api/jobs/${id}/stop`),
-  logs: (id: string) => api.get(`/api/jobs/${id}/logs`),
+  list: () => api.get('/api/v1/jobs'),
+  get: (id: string) => api.get(`/api/v1/jobs/${id}`),
+  create: (data: any) => api.post('/api/v1/jobs', data),
+  update: (id: string, data: any) => api.put(`/api/v1/jobs/${id}`, data),
+  delete: (id: string) => api.delete(`/api/v1/jobs/${id}`),
+  start: (id: string) => api.post(`/api/v1/jobs/${id}/start`),
+  stop: (id: string) => api.post(`/api/v1/jobs/${id}/stop`),
+  getLogs: (id: string) => api.get(`/api/v1/jobs/${id}/logs`),
 }
 
 // Proxies
 export const proxiesAPI = {
-  list: () => api.get('/api/proxies'),
-  create: (data: any) => api.post('/api/proxies', data),
-  update: (id: string, data: any) => api.put(`/api/proxies/${id}`, data),
-  delete: (id: string) => api.delete(`/api/proxies/${id}`),
-  test: (id: string) => api.post(`/api/proxies/${id}/test`),
+  list: () => api.get('/api/v1/proxies'),
+  get: (id: string) => api.get(`/api/v1/proxies/${id}`),
+  create: (data: any) => api.post('/api/v1/proxies', data),
+  update: (id: string, data: any) => api.put(`/api/v1/proxies/${id}`, data),
+  delete: (id: string) => api.delete(`/api/v1/proxies/${id}`),
+  test: (id: string) => api.post(`/api/v1/proxies/${id}/test`),
   bulkCreate: (proxies: string[]) =>
-    api.post('/api/proxies/bulk', { proxies }),
+    api.post('/api/v1/proxies/bulk', { proxies }),
 }
 
 // Dashboard
 export const dashboardAPI = {
-  stats: () => api.get('/api/dashboard/stats'),
-  activity: () => api.get('/api/dashboard/activity'),
-  campaigns: () => api.get('/api/dashboard/campaigns'),
+  getStats: () => api.get('/api/v1/dashboard/stats'),
+  getActivity: () => api.get('/api/v1/dashboard/activity'),
+  getCampaigns: () => api.get('/api/v1/dashboard/campaigns'),
+  getNotifications: () => api.get('/api/v1/dashboard/notifications'),
+}
+
+// Notifications
+export const notificationsAPI = {
+  list: () => api.get('/api/v1/notifications'),
+  markRead: (id: string) => api.post(`/api/v1/notifications/${id}/read`),
+  markAllRead: () => api.post('/api/v1/notifications/read-all'),
+}
+
+// Settings
+export const settingsAPI = {
+  get: () => api.get('/api/v1/settings'),
+  update: (data: any) => api.put('/api/v1/settings', data),
+  updateApiKeys: (data: any) => api.put('/api/v1/settings/api-keys', data),
 }
 
 export default api
