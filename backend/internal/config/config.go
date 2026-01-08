@@ -33,6 +33,9 @@ type Config struct {
 	// Blockchain RPC URLs
 	EthereumRPCURL string
 	SolanaRPCURL   string
+
+	// Blockchain Explorer APIs
+	BlockchairAPIKey string
 }
 
 func Load() *Config {
@@ -65,6 +68,9 @@ func Load() *Config {
 		// Blockchain RPC URLs
 		EthereumRPCURL: getEnv("ETHEREUM_RPC_URL", "https://eth.llamarpc.com"),
 		SolanaRPCURL:   getEnv("SOLANA_RPC_URL", "https://api.mainnet-beta.solana.com"),
+
+		// Blockchain Explorer APIs
+		BlockchairAPIKey: getEnv("BLOCKCHAIR_API_KEY", "G___21MVuo36XwaAt1fKa5j4rrB9gyKE"),
 	}
 }
 

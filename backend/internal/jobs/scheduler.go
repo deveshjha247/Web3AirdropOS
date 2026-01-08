@@ -1168,9 +1168,19 @@ func (s *Scheduler) executeTransaction(ctx context.Context, userID uuid.UUID, ta
 	return fmt.Errorf("transaction requires manual approval")
 }
 
-// fetchWalletBalance fetches the balance for a wallet from the appropriate RPC
+// fetchWalletBalance fetches the balance for a wallet from the appropriate RPC or Blockchair API
 func (s *Scheduler) fetchWalletBalance(ctx context.Context, wallet *models.Wallet) (string, error) {
 	client := &http.Client{Timeout: 15 * time.Second}
+
+	// Try Blockchair API first if key is available (supports multiple chains)
+	if s.config.BlockchairAPIKey != "" {
+		balance, err := s.fetchBalanceFromBlockchair(ctx, client, wallet)
+		if err == nil {
+			return balance, nil
+		}
+		// Fall back to direct RPC on Blockchair failure
+		log.Printf("Blockchair API failed for %s, falling back to RPC: %v", wallet.Address, err)
+	}
 
 	switch wallet.Type {
 	case "evm":
@@ -1253,9 +1263,90 @@ func (s *Scheduler) fetchWalletBalance(ctx context.Context, wallet *models.Walle
 
 		return fmt.Sprintf("%d", rpcResp.Result.Value), nil
 
+	case "bitcoin":
+		// Bitcoin requires Blockchair or similar API
+		return s.fetchBalanceFromBlockchair(ctx, client, wallet)
+
 	default:
 		return "", fmt.Errorf("unsupported wallet type: %s", wallet.Type)
 	}
+}
+
+// fetchBalanceFromBlockchair fetches balance using Blockchair API (multi-chain support)
+func (s *Scheduler) fetchBalanceFromBlockchair(ctx context.Context, client *http.Client, wallet *models.Wallet) (string, error) {
+	if s.config.BlockchairAPIKey == "" {
+		return "", fmt.Errorf("BLOCKCHAIR_API_KEY not configured")
+	}
+
+	// Map wallet type to Blockchair chain name
+	var chain string
+	switch wallet.Type {
+	case "evm":
+		chain = "ethereum"
+		if wallet.ChainID == 56 {
+			chain = "binance-smart-chain"
+		} else if wallet.ChainID == 137 {
+			chain = "polygon"
+		} else if wallet.ChainID == 42161 {
+			chain = "arbitrum"
+		} else if wallet.ChainID == 10 {
+			chain = "optimism"
+		} else if wallet.ChainID == 8453 {
+			chain = "base"
+		}
+	case "bitcoin":
+		chain = "bitcoin"
+	case "solana":
+		// Blockchair doesn't support Solana well, skip
+		return "", fmt.Errorf("solana not supported via Blockchair")
+	default:
+		return "", fmt.Errorf("unsupported chain for Blockchair: %s", wallet.Type)
+	}
+
+	url := fmt.Sprintf("https://api.blockchair.com/%s/dashboards/address/%s?key=%s",
+		chain, wallet.Address, s.config.BlockchairAPIKey)
+
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return "", err
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("blockchair API error: status %d", resp.StatusCode)
+	}
+
+	var blockchairResp struct {
+		Data map[string]struct {
+			Address struct {
+				Balance    int64   `json:"balance"` // In smallest unit (wei, satoshi)
+				BalanceUSD float64 `json:"balance_usd"`
+			} `json:"address"`
+		} `json:"data"`
+		Context struct {
+			Error string `json:"error"`
+		} `json:"context"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&blockchairResp); err != nil {
+		return "", err
+	}
+
+	if blockchairResp.Context.Error != "" {
+		return "", fmt.Errorf("blockchair error: %s", blockchairResp.Context.Error)
+	}
+
+	// Get balance from response
+	for _, data := range blockchairResp.Data {
+		return fmt.Sprintf("%d", data.Address.Balance), nil
+	}
+
+	return "0", nil
 }
 
 // syncAccountFromPlatform syncs account data from the respective platform API
