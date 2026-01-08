@@ -19,11 +19,11 @@ import (
 
 // Common errors
 var (
-	ErrInvalidCredentials = errors.New("invalid credentials")
-	ErrUserNotFound       = errors.New("user not found")
-	ErrEmailExists        = errors.New("email already registered")
-	ErrInvalidToken       = errors.New("invalid or expired token")
-	ErrTokenRevoked       = errors.New("token has been revoked")
+	ErrInvalidCredentials     = errors.New("invalid credentials")
+	ErrUserNotFound           = errors.New("user not found")
+	ErrEmailExists            = errors.New("email already registered")
+	ErrInvalidToken           = errors.New("invalid or expired token")
+	ErrTokenRevoked           = errors.New("token has been revoked")
 	ErrTokenFamilyCompromised = errors.New("token family compromised - all sessions revoked")
 )
 
@@ -54,16 +54,16 @@ type RefreshTokenClaims struct {
 
 // RefreshToken represents a stored refresh token
 type RefreshToken struct {
-	ID         uuid.UUID  `gorm:"type:uuid;primary_key;default:gen_random_uuid()"`
-	UserID     uuid.UUID  `gorm:"type:uuid;not null"`
-	TokenHash  string     `gorm:"size:64;uniqueIndex;not null"`
-	FamilyID   uuid.UUID  `gorm:"type:uuid;not null"`
-	ExpiresAt  time.Time  `gorm:"not null"`
+	ID         uuid.UUID `gorm:"type:uuid;primary_key;default:gen_random_uuid()"`
+	UserID     uuid.UUID `gorm:"type:uuid;not null"`
+	TokenHash  string    `gorm:"size:64;uniqueIndex;not null"`
+	FamilyID   uuid.UUID `gorm:"type:uuid;not null"`
+	ExpiresAt  time.Time `gorm:"not null"`
 	RevokedAt  *time.Time
 	ReplacedBy *uuid.UUID `gorm:"type:uuid"`
 	CreatedAt  time.Time
-	IPAddress  string     `gorm:"size:50"`
-	UserAgent  string     `gorm:"size:500"`
+	IPAddress  string `gorm:"size:50"`
+	UserAgent  string `gorm:"size:500"`
 }
 
 // TokenPair represents access and refresh tokens
@@ -87,7 +87,7 @@ func NewAuthService(db *gorm.DB, jwtSecret string) *AuthService {
 	return &AuthService{
 		db:                   db,
 		jwtSecret:            []byte(jwtSecret),
-		accessTokenDuration:  15 * time.Minute,  // Short-lived access tokens
+		accessTokenDuration:  15 * time.Minute,   // Short-lived access tokens
 		refreshTokenDuration: 7 * 24 * time.Hour, // 7-day refresh tokens
 	}
 }
@@ -107,8 +107,8 @@ type LoginRequest struct {
 
 // AuthResponse represents an authentication response
 type AuthResponse struct {
-	User        *models.User `json:"user"`
-	Tokens      TokenPair    `json:"tokens"`
+	User   *models.User `json:"user"`
+	Tokens TokenPair    `json:"tokens"`
 }
 
 // Register creates a new user account
