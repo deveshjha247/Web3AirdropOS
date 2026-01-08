@@ -5,30 +5,58 @@ import (
 )
 
 type Config struct {
-	DatabaseURL     string
-	RedisURL        string
-	JWTSecret       string
-	AIServiceURL    string
-	EncryptionKey   string
-	BrowserWSURL    string
-	FarcasterAPIKey string
-	TwitterAPIKey   string
-	TwitterSecret   string
-	OpenAIKey       string
+	// Database
+	DatabaseURL string
+	RedisURL    string
+	
+	// Security
+	JWTSecret     string
+	EncryptionKey string
+	
+	// Internal Services
+	AIServiceURL string
+	BrowserWSURL string
+	
+	// Platform API Keys
+	NeynarAPIKey     string // Farcaster via Neynar
+	FarcasterAPIKey  string // Legacy
+	TelegramBotToken string
+	TwitterAPIKey    string
+	TwitterSecret    string
+	TwitterBearer    string
+	TwitterAccessToken string
+	TwitterAccessSecret string
+	
+	// AI
+	OpenAIKey string
 }
 
 func Load() *Config {
 	return &Config{
-		DatabaseURL:     getEnv("DATABASE_URL", "postgres://postgres:postgres123@localhost:5432/web3airdropos?sslmode=disable"),
-		RedisURL:        getEnv("REDIS_URL", "redis://localhost:6379"),
-		JWTSecret:       getEnv("JWT_SECRET", "your-secret-key-change-in-production"),
-		AIServiceURL:    getEnv("AI_SERVICE_URL", "http://localhost:8001"),
-		EncryptionKey:   getEnv("ENCRYPTION_KEY", "32-byte-key-for-wallet-encryption"),
-		BrowserWSURL:    getEnv("BROWSER_WS_URL", "ws://localhost:9222"),
-		FarcasterAPIKey: getEnv("FARCASTER_API_KEY", ""),
-		TwitterAPIKey:   getEnv("TWITTER_API_KEY", ""),
-		TwitterSecret:   getEnv("TWITTER_API_SECRET", ""),
-		OpenAIKey:       getEnv("OPENAI_API_KEY", ""),
+		// Database
+		DatabaseURL: getEnv("DATABASE_URL", "postgres://postgres:postgres123@localhost:5432/web3airdropos?sslmode=disable"),
+		RedisURL:    getEnv("REDIS_URL", "redis://localhost:6379"),
+		
+		// Security
+		JWTSecret:     getEnv("JWT_SECRET", "your-secret-key-change-in-production"),
+		EncryptionKey: getEnv("ENCRYPTION_KEY", "32-byte-key-for-wallet-encryption"),
+		
+		// Internal Services
+		AIServiceURL: getEnv("AI_SERVICE_URL", "http://localhost:8001"),
+		BrowserWSURL: getEnv("BROWSER_WS_URL", "ws://localhost:9222"),
+		
+		// Platform API Keys
+		NeynarAPIKey:        getEnv("NEYNAR_API_KEY", ""),
+		FarcasterAPIKey:     getEnv("FARCASTER_API_KEY", ""),
+		TelegramBotToken:    getEnv("TELEGRAM_BOT_TOKEN", ""),
+		TwitterAPIKey:       getEnv("TWITTER_API_KEY", ""),
+		TwitterSecret:       getEnv("TWITTER_API_SECRET", ""),
+		TwitterBearer:       getEnv("TWITTER_BEARER_TOKEN", ""),
+		TwitterAccessToken:  getEnv("TWITTER_ACCESS_TOKEN", ""),
+		TwitterAccessSecret: getEnv("TWITTER_ACCESS_SECRET", ""),
+		
+		// AI
+		OpenAIKey: getEnv("OPENAI_API_KEY", ""),
 	}
 }
 

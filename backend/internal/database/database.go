@@ -69,6 +69,9 @@ func Migrate(db *gorm.DB) error {
 		&models.BrowserSession{},
 		&models.BrowserProfile{},
 		&models.BrowserAction{},
+		
+		// Audit & Logging models
+		&models.AuditLog{},
 	)
 	
 	if err != nil {
