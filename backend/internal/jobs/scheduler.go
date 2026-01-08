@@ -3,6 +3,7 @@ package jobs
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"sync"
 	"time"
@@ -18,14 +19,14 @@ import (
 
 // Scheduler manages all background jobs
 type Scheduler struct {
-	db          *gorm.DB
-	redis       *redis.Client
-	wsHub       *websocket.Hub
-	cron        *cron.Cron
-	workers     map[string]*Worker
-	jobQueue    chan *JobContext
-	stopChan    chan struct{}
-	mu          sync.RWMutex
+	db       *gorm.DB
+	redis    *redis.Client
+	wsHub    *websocket.Hub
+	cron     *cron.Cron
+	workers  map[string]*Worker
+	jobQueue chan *JobContext
+	stopChan chan struct{}
+	mu       sync.RWMutex
 }
 
 // JobContext contains all context for a job execution
@@ -135,7 +136,7 @@ func (s *Scheduler) EnqueueJob(jobID uuid.UUID) error {
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
-	
+
 	jctx := &JobContext{
 		Job:         &job,
 		UserID:      job.UserID,
@@ -193,7 +194,7 @@ func (s *Scheduler) jobChecker() {
 		case <-ticker.C:
 			// Check for jobs that should be run
 			var jobs []models.AutomationJob
-			s.db.Where("is_active = ? AND next_run_at <= ? AND status != ?", 
+			s.db.Where("is_active = ? AND next_run_at <= ? AND status != ?",
 				true, time.Now(), "running").Find(&jobs)
 
 			for _, job := range jobs {
@@ -225,7 +226,7 @@ func (s *Scheduler) redisQueueListener() {
 
 func (w *Worker) run(s *Scheduler) {
 	log.Printf("👷 Worker %d started", w.id)
-	
+
 	for {
 		select {
 		case jctx := <-w.queue:
@@ -290,7 +291,7 @@ func (s *Scheduler) completeJob(jctx *JobContext, status, message string, startT
 		"status":     "idle",
 		"total_runs": gorm.Expr("total_runs + 1"),
 	}
-	
+
 	if status == "completed" {
 		updates["success_runs"] = gorm.Expr("success_runs + 1")
 	} else {
@@ -377,11 +378,47 @@ func (s *Scheduler) handleScheduledPost(ctx context.Context, jctx *JobContext, s
 			// Mark as processing
 			s.db.Model(&post).Update("status", "processing")
 
-			// TODO: Actually publish the post via platform service
-			// For now, mark as posted
+			// Get the account to publish from
+			var account models.PlatformAccount
+			if err := s.db.First(&account, post.AccountID).Error; err != nil {
+				s.db.Model(&post).Updates(map[string]interface{}{
+					"status":        "failed",
+					"error_message": "account not found",
+				})
+				continue
+			}
+
+			// Publish via platform adapter
+			var postURL string
+			var pubErr error
+
+			switch account.Platform {
+			case models.PlatformFarcaster:
+				postURL, pubErr = s.publishToFarcaster(&account, post.Content)
+			case models.PlatformTelegram:
+				postURL, pubErr = s.publishToTelegram(&account, post.Content)
+			default:
+				pubErr = fmt.Errorf("platform %s not supported for automated publishing", account.Platform)
+			}
+
+			if pubErr != nil {
+				s.db.Model(&post).Updates(map[string]interface{}{
+					"status":        "failed",
+					"error_message": pubErr.Error(),
+				})
+				s.wsHub.BroadcastTerminal(jctx.UserID.String(), websocket.TerminalMessage{
+					Level:     "error",
+					Source:    "post",
+					Message:   "Failed to publish: " + pubErr.Error(),
+					AccountID: post.AccountID.String(),
+				})
+				continue
+			}
+
 			s.db.Model(&post).Updates(map[string]interface{}{
 				"status":    "posted",
 				"posted_at": time.Now(),
+				"post_url":  postURL,
 			})
 
 			// Add random delay between posts (human-like behavior)
@@ -397,7 +434,7 @@ func (s *Scheduler) handleCampaignTask(ctx context.Context, jctx *JobContext, sc
 		CampaignID string   `json:"campaign_id"`
 		TaskIDs    []string `json:"task_ids"`
 	}
-	
+
 	if err := json.Unmarshal([]byte(jctx.Job.Config), &config); err != nil {
 		return err
 	}
@@ -457,9 +494,32 @@ func (s *Scheduler) handleCampaignTask(ctx context.Context, jctx *JobContext, sc
 				continue
 			}
 
-			// Execute task
-			// TODO: Implement actual task execution logic
-			
+			// Execute task based on type
+			var execErr error
+			switch task.ActionType {
+			case "social_action":
+				execErr = s.executeSocialAction(ctx, jctx.UserID, &task, execution)
+			case "transaction":
+				execErr = s.executeTransaction(ctx, jctx.UserID, &task, execution)
+			default:
+				execErr = fmt.Errorf("unknown action type: %s", task.ActionType)
+			}
+
+			if execErr != nil {
+				s.db.Model(execution).Updates(map[string]interface{}{
+					"status":        "failed",
+					"error_message": execErr.Error(),
+					"completed_at":  time.Now(),
+				})
+				s.wsHub.BroadcastTerminal(jctx.UserID.String(), websocket.TerminalMessage{
+					Level:   "error",
+					Source:  "task",
+					Message: "Task failed: " + execErr.Error(),
+					TaskID:  taskID.String(),
+				})
+				continue
+			}
+
 			s.db.Model(execution).Updates(map[string]interface{}{
 				"status":       "completed",
 				"completed_at": time.Now(),
@@ -551,7 +611,7 @@ func (s *Scheduler) handleEngagement(ctx context.Context, jctx *JobContext, sche
 		Actions    []string `json:"actions"` // like, reply, follow, recast
 		MaxActions int      `json:"max_actions"`
 	}
-	
+
 	if err := json.Unmarshal([]byte(jctx.Job.Config), &config); err != nil {
 		return err
 	}
@@ -589,7 +649,7 @@ func (s *Scheduler) handleBulkExecute(ctx context.Context, jctx *JobContext, sch
 		Parallel    bool     `json:"parallel"`
 		MaxParallel int      `json:"max_parallel"`
 	}
-	
+
 	if err := json.Unmarshal([]byte(jctx.Job.Config), &config); err != nil {
 		return err
 	}

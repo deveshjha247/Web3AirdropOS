@@ -3,6 +3,8 @@ package services
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
+	"net/http"
 	"time"
 
 	"github.com/google/uuid"
@@ -21,34 +23,34 @@ func NewAccountService(c *Container) *AccountService {
 }
 
 type CreateAccountRequest struct {
-	Platform        models.PlatformType `json:"platform" binding:"required"`
-	Username        string              `json:"username" binding:"required"`
-	DisplayName     string              `json:"display_name"`
-	ProfileURL      string              `json:"profile_url"`
-	AvatarURL       string              `json:"avatar_url"`
-	WalletID        *uuid.UUID          `json:"wallet_id"`
-	BrowserProfileID *uuid.UUID         `json:"browser_profile_id"`
-	ProxyID         *uuid.UUID          `json:"proxy_id"`
-	AccessToken     string              `json:"access_token"`
-	RefreshToken    string              `json:"refresh_token"`
+	Platform         models.PlatformType `json:"platform" binding:"required"`
+	Username         string              `json:"username" binding:"required"`
+	DisplayName      string              `json:"display_name"`
+	ProfileURL       string              `json:"profile_url"`
+	AvatarURL        string              `json:"avatar_url"`
+	WalletID         *uuid.UUID          `json:"wallet_id"`
+	BrowserProfileID *uuid.UUID          `json:"browser_profile_id"`
+	ProxyID          *uuid.UUID          `json:"proxy_id"`
+	AccessToken      string              `json:"access_token"`
+	RefreshToken     string              `json:"refresh_token"`
 }
 
 type UpdateAccountRequest struct {
-	Username     string     `json:"username"`
-	DisplayName  string     `json:"display_name"`
-	WalletID     *uuid.UUID `json:"wallet_id"`
-	ProxyID      *uuid.UUID `json:"proxy_id"`
-	IsActive     *bool      `json:"is_active"`
+	Username    string     `json:"username"`
+	DisplayName string     `json:"display_name"`
+	WalletID    *uuid.UUID `json:"wallet_id"`
+	ProxyID     *uuid.UUID `json:"proxy_id"`
+	IsActive    *bool      `json:"is_active"`
 }
 
 func (s *AccountService) List(userID uuid.UUID, platform string) ([]models.PlatformAccount, error) {
 	var accounts []models.PlatformAccount
 	query := s.container.DB.Where("user_id = ?", userID)
-	
+
 	if platform != "" {
 		query = query.Where("platform = ?", platform)
 	}
-	
+
 	if err := query.Find(&accounts).Error; err != nil {
 		return nil, err
 	}
@@ -243,13 +245,13 @@ func (s *AccountService) syncFarcaster(account *models.PlatformAccount) error {
 	// Fetch user profile from Neynar
 	client := &http.Client{Timeout: 10 * time.Second}
 	url := fmt.Sprintf("https://api.neynar.com/v2/farcaster/user?fid=%s", account.PlatformUserID)
-	
+
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return err
 	}
 	req.Header.Set("api_key", s.container.Config.NeynarAPIKey)
-	
+
 	resp, err := client.Do(req)
 	if err != nil {
 		return fmt.Errorf("neynar API error: %w", err)
@@ -282,7 +284,7 @@ func (s *AccountService) syncFarcaster(account *models.PlatformAccount) error {
 			"display_name":    user.DisplayName,
 		}
 		metadataJSON, _ := json.Marshal(metadata)
-		
+
 		s.container.DB.Model(account).Updates(map[string]interface{}{
 			"display_name": user.DisplayName,
 			"metadata":     string(metadataJSON),
@@ -300,13 +302,13 @@ func (s *AccountService) syncTwitter(account *models.PlatformAccount) error {
 
 	client := &http.Client{Timeout: 10 * time.Second}
 	url := fmt.Sprintf("https://api.twitter.com/2/users/%s?user.fields=public_metrics,description", account.PlatformUserID)
-	
+
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return err
 	}
 	req.Header.Set("Authorization", "Bearer "+s.container.Config.TwitterBearer)
-	
+
 	resp, err := client.Do(req)
 	if err != nil {
 		return fmt.Errorf("twitter API error: %w", err)
@@ -344,7 +346,7 @@ func (s *AccountService) syncTwitter(account *models.PlatformAccount) error {
 		"tweet_count":     result.Data.PublicMetrics.Tweets,
 	}
 	metadataJSON, _ := json.Marshal(metadata)
-	
+
 	s.container.DB.Model(account).Updates(map[string]interface{}{
 		"display_name": result.Data.Name,
 		"metadata":     string(metadataJSON),
@@ -362,7 +364,7 @@ func (s *AccountService) syncTelegram(account *models.PlatformAccount) error {
 	// For Telegram, we can get updates or chat info depending on account type
 	// Update the last activity timestamp
 	s.container.DB.Model(account).Update("last_synced_at", time.Now())
-	
+
 	return nil
 }
 
@@ -376,7 +378,7 @@ func (s *AccountService) syncDiscord(account *models.PlatformAccount) error {
 // LogActivity creates an activity record for an account
 func (s *AccountService) LogActivity(accountID uuid.UUID, activityType string, content string, metadata map[string]interface{}, campaignID *uuid.UUID, automatedBy string) error {
 	metadataJSON, _ := json.Marshal(metadata)
-	
+
 	activity := &models.AccountActivity{
 		ID:          uuid.New(),
 		AccountID:   accountID,
