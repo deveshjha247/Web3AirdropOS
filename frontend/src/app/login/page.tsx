@@ -1,13 +1,17 @@
 'use client'
 
-import { useState } from 'react'
-import { useRouter } from 'next/navigation'
-import { Globe, Mail, Lock, Eye, EyeOff, ArrowRight } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
+import Link from 'next/link'
+import { Globe, Mail, Lock, Eye, EyeOff, ArrowRight, Zap } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 
 export default function LoginPage() {
   const router = useRouter()
-  const [isLogin, setIsLogin] = useState(true)
+  const searchParams = useSearchParams()
+  const mode = searchParams.get('mode')
+  
+  const [isLogin, setIsLogin] = useState(mode !== 'register')
   const [showPassword, setShowPassword] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [formData, setFormData] = useState({
@@ -16,6 +20,11 @@ export default function LoginPage() {
     confirmPassword: '',
   })
   const [error, setError] = useState('')
+
+  // Update mode when URL changes
+  useEffect(() => {
+    setIsLogin(mode !== 'register')
+  }, [mode])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -56,7 +65,7 @@ export default function LoginPage() {
       localStorage.setItem('token', data.token)
       
       // Redirect to dashboard
-      router.push('/')
+      router.push('/dashboard')
     } catch (err: any) {
       setError(err.message || 'Something went wrong')
     } finally {
