@@ -550,18 +550,16 @@ function Footer() {
 // =====================================================
 export default function LandingPage() {
   return (
-    <html lang="en" className="dark">
-      <body className="min-h-screen bg-zinc-950 text-white antialiased">
-        <Navbar />
-        <main>
-          <HeroSection />
-          <FeaturesSection />
-          <HowItWorksSection />
-          <PricingSection />
-          <FAQSection />
-        </main>
-        <Footer />
-      </body>
-    </html>
+    <div className="min-h-screen bg-zinc-950 text-white">
+      <Navbar />
+      <main>
+        <HeroSection />
+        <FeaturesSection />
+        <HowItWorksSection />
+        <PricingSection />
+        <FAQSection />
+      </main>
+      <Footer />
+    </div>
   );
 }
