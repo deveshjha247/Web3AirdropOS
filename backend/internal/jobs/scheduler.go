@@ -703,7 +703,85 @@ func (s *Scheduler) handleContentGenerate(ctx context.Context, jctx *JobContext,
 		Message: "Generating AI content...",
 	})
 
-	// TODO: Call AI microservice to generate content
+	// Parse config for content generation parameters
+	var config struct {
+		Prompt       string `json:"prompt"`
+		ContentType  string `json:"content_type"` // tweet, cast, thread
+		Quantity     int    `json:"quantity"`
+		SaveAsDrafts bool   `json:"save_as_drafts"`
+	}
+
+	if err := json.Unmarshal([]byte(jctx.Job.Config), &config); err != nil {
+		return err
+	}
+
+	if config.Quantity == 0 {
+		config.Quantity = 1
+	}
+
+	// Call AI microservice
+	aiServiceURL := s.config.AIServiceURL
+	if aiServiceURL == "" {
+		aiServiceURL = "http://ai-service:8000"
+	}
+
+	for i := 0; i < config.Quantity; i++ {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+			payload := map[string]interface{}{
+				"prompt":       config.Prompt,
+				"content_type": config.ContentType,
+			}
+			payloadBytes, _ := json.Marshal(payload)
+
+			req, err := http.NewRequestWithContext(ctx, "POST", aiServiceURL+"/generate", bytes.NewReader(payloadBytes))
+			if err != nil {
+				log.Printf("Failed to create AI request: %v", err)
+				continue
+			}
+			req.Header.Set("Content-Type", "application/json")
+
+			client := &http.Client{Timeout: 60 * time.Second}
+			resp, err := client.Do(req)
+			if err != nil {
+				log.Printf("AI service request failed: %v", err)
+				continue
+			}
+
+			var aiResp struct {
+				Content string `json:"content"`
+				Error   string `json:"error"`
+			}
+			if err := json.NewDecoder(resp.Body).Decode(&aiResp); err != nil {
+				resp.Body.Close()
+				continue
+			}
+			resp.Body.Close()
+
+			if aiResp.Error != "" {
+				log.Printf("AI service error: %s", aiResp.Error)
+				continue
+			}
+
+			// Save as draft if requested
+			if config.SaveAsDrafts && aiResp.Content != "" {
+				draft := &models.ContentDraft{
+					UserID:  jctx.UserID,
+					Content: aiResp.Content,
+					Status:  "draft",
+				}
+				s.db.Create(draft)
+			}
+
+			s.wsHub.BroadcastTerminal(jctx.UserID.String(), websocket.TerminalMessage{
+				Level:   "success",
+				Source:  "ai",
+				Message: fmt.Sprintf("Generated content %d/%d", i+1, config.Quantity),
+			})
+		}
+	}
 
 	return nil
 }
