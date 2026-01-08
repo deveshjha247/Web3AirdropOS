@@ -86,19 +86,21 @@ export default function WalletsPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between animate-fade-in">
         <div>
-          <h1 className="text-3xl font-bold">Wallets</h1>
-          <p className="text-muted-foreground">
+          <h1 className="text-3xl font-bold bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text text-transparent">
+            Wallets
+          </h1>
+          <p className="text-muted-foreground mt-1">
             Manage your EVM and Solana wallets
           </p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline">
+          <Button variant="outline" className="hover-lift">
             <RefreshCw className="h-4 w-4 mr-2" />
             Sync All
           </Button>
-          <Button>
+          <Button className="hover-lift">
             <Plus className="h-4 w-4 mr-2" />
             Add Wallet
           </Button>
@@ -136,82 +138,142 @@ export default function WalletsPage() {
 
       {/* Wallets Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {filteredWallets.map((wallet) => (
-          <Card key={wallet.id} className="hover:border-primary/50 transition-colors">
-            <CardHeader className="flex flex-row items-start justify-between pb-2">
-              <div>
-                <CardTitle className="text-base font-medium">
-                  {wallet.name}
-                </CardTitle>
-                <div className="flex items-center gap-2 mt-1">
-                  <span
-                    className={`px-2 py-0.5 rounded text-xs ${
-                      chainColors[wallet.chain]
-                    }`}
-                  >
-                    {wallet.chain}
-                  </span>
-                </div>
-              </div>
-              <Button variant="ghost" size="icon" className="h-8 w-8">
-                <MoreVertical className="h-4 w-4" />
-              </Button>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-3">
-                {/* Address */}
-                <div className="flex items-center justify-between">
-                  <code className="text-sm text-muted-foreground">
-                    {shortenAddress(wallet.address)}
-                  </code>
-                  <div className="flex gap-1">
-                    <Button variant="ghost" size="icon" className="h-7 w-7">
-                      <Copy className="h-3 w-3" />
-                    </Button>
-                    <Button variant="ghost" size="icon" className="h-7 w-7">
-                      <ExternalLink className="h-3 w-3" />
-                    </Button>
+        {filteredWallets.length === 0 ? (
+          <div className="col-span-full">
+            <Card className="border-dashed animate-fade-in">
+              <CardContent className="flex flex-col items-center justify-center py-12 text-center">
+                <Wallet className="h-12 w-12 text-muted-foreground mb-4 opacity-50" />
+                <h3 className="text-lg font-semibold mb-2">No wallets found</h3>
+                <p className="text-sm text-muted-foreground mb-4">
+                  {searchQuery || selectedGroup
+                    ? 'Try adjusting your filters'
+                    : 'Get started by adding your first wallet'}
+                </p>
+                {!searchQuery && !selectedGroup && (
+                  <Button>
+                    <Plus className="h-4 w-4 mr-2" />
+                    Add Wallet
+                  </Button>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        ) : (
+          <>
+            {filteredWallets.map((wallet, index) => (
+              <Card
+                key={wallet.id}
+                className="hover-lift animate-slide-up border-border/50 hover:border-primary/50 transition-all duration-300"
+                style={{ animationDelay: `${index * 50}ms` }}
+              >
+                <CardHeader className="flex flex-row items-start justify-between pb-3">
+                  <div className="flex-1 min-w-0">
+                    <CardTitle className="text-base font-semibold truncate">
+                      {wallet.name}
+                    </CardTitle>
+                    <div className="flex items-center gap-2 mt-2">
+                      <span
+                        className={`px-2.5 py-1 rounded-md text-xs font-medium ${
+                          chainColors[wallet.chain]
+                        }`}
+                      >
+                        {wallet.chain}
+                      </span>
+                    </div>
                   </div>
-                </div>
-
-                {/* Balance */}
-                <div className="text-2xl font-bold">{wallet.balance}</div>
-
-                {/* Tags */}
-                <div className="flex flex-wrap gap-1">
-                  {wallet.tags.map((tag) => (
-                    <span
-                      key={tag}
-                      className="px-2 py-0.5 rounded-full text-xs bg-muted text-muted-foreground"
-                    >
-                      <Tag className="inline h-3 w-3 mr-1" />
-                      {tag}
-                    </span>
-                  ))}
-                </div>
-
-                {/* Actions */}
-                <div className="flex gap-2 pt-2 border-t border-border">
-                  <Button variant="outline" size="sm" className="flex-1">
-                    <RefreshCw className="h-3 w-3 mr-1" />
-                    Sync
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 hover:bg-muted transition-all"
+                  >
+                    <MoreVertical className="h-4 w-4" />
                   </Button>
-                  <Button variant="outline" size="sm" className="flex-1">
-                    View
-                  </Button>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-4">
+                    {/* Address */}
+                    <div className="flex items-center justify-between p-2 rounded-lg bg-muted/50">
+                      <code className="text-xs font-mono text-muted-foreground truncate flex-1">
+                        {shortenAddress(wallet.address)}
+                      </code>
+                      <div className="flex gap-1 ml-2">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 hover:bg-primary/10 hover:text-primary transition-all"
+                          title="Copy Address"
+                        >
+                          <Copy className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 hover:bg-primary/10 hover:text-primary transition-all"
+                          title="View on Explorer"
+                        >
+                          <ExternalLink className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    </div>
 
-        {/* Add Wallet Card */}
-        <Card className="border-dashed hover:border-primary/50 transition-colors cursor-pointer">
-          <CardContent className="flex flex-col items-center justify-center h-full min-h-[200px] text-muted-foreground">
-            <Plus className="h-10 w-10 mb-2" />
-            <span>Add New Wallet</span>
-          </CardContent>
-        </Card>
+                    {/* Balance */}
+                    <div>
+                      <p className="text-xs text-muted-foreground mb-1">Balance</p>
+                      <div className="text-2xl font-bold bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text text-transparent">
+                        {wallet.balance}
+                      </div>
+                    </div>
+
+                    {/* Tags */}
+                    {wallet.tags.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5">
+                        {wallet.tags.map((tag) => (
+                          <span
+                            key={tag}
+                            className="px-2 py-1 rounded-md text-xs bg-muted/50 text-muted-foreground flex items-center gap-1"
+                          >
+                            <Tag className="h-3 w-3" />
+                            {tag}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Actions */}
+                    <div className="flex gap-2 pt-3 border-t border-border">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="flex-1 hover:bg-primary/10 hover:border-primary/50 transition-all"
+                      >
+                        <RefreshCw className="h-3 w-3 mr-1.5" />
+                        Sync
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="flex-1 hover:bg-primary/10 hover:border-primary/50 transition-all"
+                      >
+                        View
+                      </Button>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+
+            {/* Add Wallet Card */}
+            <Card className="border-dashed hover-lift animate-slide-up cursor-pointer group hover:border-primary/50 transition-all duration-300">
+              <CardContent className="flex flex-col items-center justify-center h-full min-h-[200px] text-muted-foreground group-hover:text-primary transition-colors">
+                <div className="h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center mb-3 group-hover:bg-primary/20 transition-colors">
+                  <Plus className="h-6 w-6" />
+                </div>
+                <span className="font-medium">Add New Wallet</span>
+                <span className="text-xs mt-1">Import or create wallet</span>
+              </CardContent>
+            </Card>
+          </>
+        )}
       </div>
     </div>
   )
