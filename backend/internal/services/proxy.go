@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/google/uuid"
@@ -43,11 +44,11 @@ type UpdateProxyRequest struct {
 }
 
 type ProxyTestResult struct {
-	Success   bool   `json:"success"`
-	Latency   int    `json:"latency"` // in milliseconds
+	Success    bool   `json:"success"`
+	Latency    int    `json:"latency"` // in milliseconds
 	ExternalIP string `json:"external_ip"`
-	Country   string `json:"country"`
-	Error     string `json:"error,omitempty"`
+	Country    string `json:"country"`
+	Error      string `json:"error,omitempty"`
 }
 
 func (s *ProxyService) List(userID uuid.UUID) ([]models.Proxy, error) {
@@ -167,13 +168,18 @@ func (s *ProxyService) testProxy(proxyRecord *models.Proxy) (*ProxyTestResult, e
 			proxyURL = fmt.Sprintf("http://%s:%s@%s:%d", proxyRecord.Username, proxyRecord.Password, proxyRecord.Host, proxyRecord.Port)
 		}
 
+		parsedProxyURL, err := url.Parse(proxyURL)
+		if err != nil {
+			result.Error = "invalid proxy URL: " + err.Error()
+			return result, nil
+		}
+
 		httpClient = &http.Client{
 			Transport: &http.Transport{
-				Proxy: http.ProxyFromEnvironment,
+				Proxy: http.ProxyURL(parsedProxyURL),
 			},
 			Timeout: 10 * time.Second,
 		}
-		_ = proxyURL // TODO: Set proxy URL properly
 
 	default:
 		result.Error = "unsupported proxy type"

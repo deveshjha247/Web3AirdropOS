@@ -21,40 +21,40 @@ func NewCampaignService(c *Container) *CampaignService {
 }
 
 type CreateCampaignRequest struct {
-	Name            string              `json:"name" binding:"required"`
-	Description     string              `json:"description"`
-	Type            models.CampaignType `json:"type" binding:"required"`
-	URL             string              `json:"url"`
-	ImageURL        string              `json:"image_url"`
-	StartDate       time.Time           `json:"start_date"`
-	EndDate         time.Time           `json:"end_date"`
-	Deadline        *time.Time          `json:"deadline"`
-	EstimatedReward string              `json:"estimated_reward"`
-	RewardType      string              `json:"reward_type"`
-	WalletGroupIDs  []uuid.UUID         `json:"wallet_group_ids"`
+	Name            string                 `json:"name" binding:"required"`
+	Description     string                 `json:"description"`
+	Type            models.CampaignType    `json:"type" binding:"required"`
+	URL             string                 `json:"url"`
+	ImageURL        string                 `json:"image_url"`
+	StartDate       time.Time              `json:"start_date"`
+	EndDate         time.Time              `json:"end_date"`
+	Deadline        *time.Time             `json:"deadline"`
+	EstimatedReward string                 `json:"estimated_reward"`
+	RewardType      string                 `json:"reward_type"`
+	WalletGroupIDs  []uuid.UUID            `json:"wallet_group_ids"`
 	Metadata        map[string]interface{} `json:"metadata"`
 }
 
 type UpdateCampaignRequest struct {
-	Name            string              `json:"name"`
-	Description     string              `json:"description"`
-	URL             string              `json:"url"`
-	Status          string              `json:"status"`
-	Priority        *int                `json:"priority"`
-	EndDate         *time.Time          `json:"end_date"`
-	Deadline        *time.Time          `json:"deadline"`
-	EstimatedReward string              `json:"estimated_reward"`
+	Name            string     `json:"name"`
+	Description     string     `json:"description"`
+	URL             string     `json:"url"`
+	Status          string     `json:"status"`
+	Priority        *int       `json:"priority"`
+	EndDate         *time.Time `json:"end_date"`
+	Deadline        *time.Time `json:"deadline"`
+	EstimatedReward string     `json:"estimated_reward"`
 }
 
 type CampaignProgress struct {
-	CampaignID      uuid.UUID              `json:"campaign_id"`
-	TotalTasks      int                    `json:"total_tasks"`
-	CompletedTasks  int                    `json:"completed_tasks"`
-	PendingTasks    int                    `json:"pending_tasks"`
-	FailedTasks     int                    `json:"failed_tasks"`
-	ProgressPercent float64                `json:"progress_percent"`
-	WalletProgress  []WalletTaskProgress   `json:"wallet_progress"`
-	AccountProgress []AccountTaskProgress  `json:"account_progress"`
+	CampaignID      uuid.UUID             `json:"campaign_id"`
+	TotalTasks      int                   `json:"total_tasks"`
+	CompletedTasks  int                   `json:"completed_tasks"`
+	PendingTasks    int                   `json:"pending_tasks"`
+	FailedTasks     int                   `json:"failed_tasks"`
+	ProgressPercent float64               `json:"progress_percent"`
+	WalletProgress  []WalletTaskProgress  `json:"wallet_progress"`
+	AccountProgress []AccountTaskProgress `json:"account_progress"`
 }
 
 type WalletTaskProgress struct {
@@ -77,14 +77,14 @@ func (s *CampaignService) List(userID uuid.UUID, status string, campaignType str
 	query := s.container.DB.Where("user_id = ?", userID).
 		Preload("WalletGroups").
 		Preload("Tasks")
-	
+
 	if status != "" {
 		query = query.Where("status = ?", status)
 	}
 	if campaignType != "" {
 		query = query.Where("type = ?", campaignType)
 	}
-	
+
 	if err := query.Order("priority DESC, created_at DESC").Find(&campaigns).Error; err != nil {
 		return nil, err
 	}
@@ -107,14 +107,14 @@ func (s *CampaignService) Get(userID, campaignID uuid.UUID) (*models.Campaign, e
 		First(&campaign).Error; err != nil {
 		return nil, err
 	}
-	
+
 	s.calculateProgress(&campaign)
 	return &campaign, nil
 }
 
 func (s *CampaignService) Create(userID uuid.UUID, req *CreateCampaignRequest) (*models.Campaign, error) {
 	metadataJSON, _ := json.Marshal(req.Metadata)
-	
+
 	campaign := &models.Campaign{
 		ID:              uuid.New(),
 		UserID:          userID,
@@ -215,18 +215,18 @@ func (s *CampaignService) GetTasks(userID, campaignID uuid.UUID) ([]models.Campa
 }
 
 type AddTaskRequest struct {
-	Name             string         `json:"name" binding:"required"`
-	Description      string         `json:"description"`
-	Type             models.TaskType `json:"type" binding:"required"`
-	TargetURL        string         `json:"target_url"`
-	TargetPlatform   string         `json:"target_platform"`
-	TargetAccount    string         `json:"target_account"`
-	RequiredAction   string         `json:"required_action"`
-	IsAutomatable    bool           `json:"is_automatable"`
-	RequiresManual   bool           `json:"requires_manual"`
-	Points           int            `json:"points"`
-	Order            int            `json:"order"`
-	DependsOn        *uuid.UUID     `json:"depends_on"`
+	Name           string          `json:"name" binding:"required"`
+	Description    string          `json:"description"`
+	Type           models.TaskType `json:"type" binding:"required"`
+	TargetURL      string          `json:"target_url"`
+	TargetPlatform string          `json:"target_platform"`
+	TargetAccount  string          `json:"target_account"`
+	RequiredAction string          `json:"required_action"`
+	IsAutomatable  bool            `json:"is_automatable"`
+	RequiresManual bool            `json:"requires_manual"`
+	Points         int             `json:"points"`
+	Order          int             `json:"order"`
+	DependsOn      *uuid.UUID      `json:"depends_on"`
 }
 
 func (s *CampaignService) AddTask(userID, campaignID uuid.UUID, req *AddTaskRequest) (*models.CampaignTask, error) {
@@ -237,20 +237,20 @@ func (s *CampaignService) AddTask(userID, campaignID uuid.UUID, req *AddTaskRequ
 	}
 
 	task := &models.CampaignTask{
-		ID:              uuid.New(),
-		CampaignID:      campaignID,
-		Name:            req.Name,
-		Description:     req.Description,
-		Type:            req.Type,
-		TargetURL:       req.TargetURL,
-		TargetPlatform:  req.TargetPlatform,
-		TargetAccount:   req.TargetAccount,
-		RequiredAction:  req.RequiredAction,
-		IsAutomatable:   req.IsAutomatable,
-		RequiresManual:  req.RequiresManual,
-		Points:          req.Points,
-		Order:           req.Order,
-		DependsOn:       req.DependsOn,
+		ID:             uuid.New(),
+		CampaignID:     campaignID,
+		Name:           req.Name,
+		Description:    req.Description,
+		Type:           req.Type,
+		TargetURL:      req.TargetURL,
+		TargetPlatform: req.TargetPlatform,
+		TargetAccount:  req.TargetAccount,
+		RequiredAction: req.RequiredAction,
+		IsAutomatable:  req.IsAutomatable,
+		RequiresManual: req.RequiresManual,
+		Points:         req.Points,
+		Order:          req.Order,
+		DependsOn:      req.DependsOn,
 	}
 
 	if err := s.container.DB.Create(task).Error; err != nil {
@@ -281,11 +281,11 @@ func (s *CampaignService) ExecuteBulk(userID, campaignID uuid.UUID, req *BulkExe
 
 	// Create automation job for bulk execution
 	config := map[string]interface{}{
-		"campaign_id": campaignID.String(),
-		"wallet_ids":  req.WalletIDs,
-		"account_ids": req.AccountIDs,
-		"task_ids":    req.TaskIDs,
-		"parallel":    req.Parallel,
+		"campaign_id":  campaignID.String(),
+		"wallet_ids":   req.WalletIDs,
+		"account_ids":  req.AccountIDs,
+		"task_ids":     req.TaskIDs,
+		"parallel":     req.Parallel,
 		"max_parallel": req.MaxParallel,
 	}
 	configJSON, _ := json.Marshal(config)
@@ -318,8 +318,14 @@ func (s *CampaignService) ExecuteBulk(userID, campaignID uuid.UUID, req *BulkExe
 		},
 	})
 
-	// TODO: Enqueue the job for processing
-	// s.container.Scheduler.EnqueueJob(job.ID)
+	// Enqueue the job for processing via Redis queue
+	jobPayload, _ := json.Marshal(map[string]interface{}{
+		"job_id":      job.ID.String(),
+		"user_id":     userID.String(),
+		"campaign_id": campaignID.String(),
+		"type":        job.Type,
+	})
+	s.container.Redis.LPush(s.container.Redis.Context(), "job:queue", string(jobPayload))
 
 	return nil
 }

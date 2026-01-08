@@ -560,9 +560,16 @@ func (s *Scheduler) handleBalanceSync(ctx context.Context, jctx *JobContext, sch
 				WalletID: wallet.ID.String(),
 			})
 
-			// TODO: Actually fetch balance from RPC
-			// For now, just update last sync time
-			s.db.Model(&wallet).Update("last_balance_sync", time.Now())
+			// Fetch balance from RPC based on chain type
+			balance, err := s.fetchWalletBalance(ctx, &wallet)
+			if err != nil {
+				log.Printf("Failed to fetch balance for %s: %v", wallet.Address, err)
+			} else {
+				s.db.Model(&wallet).Updates(map[string]interface{}{
+					"balance":           balance,
+					"last_balance_sync": time.Now(),
+				})
+			}
 
 			time.Sleep(500 * time.Millisecond) // Rate limiting
 		}
@@ -601,8 +608,10 @@ func (s *Scheduler) handlePlatformSync(ctx context.Context, jctx *JobContext, sc
 				AccountID: account.ID.String(),
 			})
 
-			// TODO: Actually sync account data from platform API
-			s.db.Model(&account).Update("last_activity_at", time.Now())
+			// Sync account data from platform API
+			if err := s.syncAccountFromPlatform(ctx, &account); err != nil {
+				log.Printf("Failed to sync account %s: %v", account.Username, err)
+			}
 
 			time.Sleep(1 * time.Second) // Rate limiting
 		}
@@ -628,8 +637,61 @@ func (s *Scheduler) handleEngagement(ctx context.Context, jctx *JobContext, sche
 		Message: "Starting engagement automation...",
 	})
 
-	// TODO: Implement engagement logic
-	// This would interact with platform APIs to perform actions
+	// Execute engagement actions via platform adapters
+	actionCount := 0
+	maxActions := config.MaxActions
+	if maxActions == 0 {
+		maxActions = 10 // Default limit
+	}
+
+	for _, accountIDStr := range config.AccountIDs {
+		if actionCount >= maxActions {
+			break
+		}
+
+		accountID, err := uuid.Parse(accountIDStr)
+		if err != nil {
+			continue
+		}
+
+		var account models.PlatformAccount
+		if err := s.db.First(&account, accountID).Error; err != nil {
+			continue
+		}
+
+		for _, action := range config.Actions {
+			if actionCount >= maxActions {
+				break
+			}
+
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			default:
+				// Execute the action
+				if err := s.executeSocialAction(ctx, &account, action, ""); err != nil {
+					log.Printf("Engagement action failed: %v", err)
+				} else {
+					actionCount++
+					s.wsHub.BroadcastTerminal(jctx.UserID.String(), websocket.TerminalMessage{
+						Level:     "success",
+						Source:    "engagement",
+						Message:   fmt.Sprintf("Completed %s action", action),
+						AccountID: account.ID.String(),
+					})
+				}
+
+				// Rate limiting delay
+				time.Sleep(2 * time.Second)
+			}
+		}
+	}
+
+	s.wsHub.BroadcastTerminal(jctx.UserID.String(), websocket.TerminalMessage{
+		Level:   "success",
+		Source:  "engagement",
+		Message: fmt.Sprintf("Engagement automation completed: %d actions", actionCount),
+	})
 
 	return nil
 }

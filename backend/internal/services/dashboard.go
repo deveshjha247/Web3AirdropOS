@@ -1,6 +1,7 @@
 package services
 
 import (
+	"sort"
 	"time"
 
 	"github.com/google/uuid"
@@ -18,40 +19,40 @@ func NewDashboardService(c *Container) *DashboardService {
 
 type DashboardStats struct {
 	// Wallet stats
-	TotalWallets       int     `json:"total_wallets"`
-	EVMWallets         int     `json:"evm_wallets"`
-	SolanaWallets      int     `json:"solana_wallets"`
-	TotalBalanceUSD    float64 `json:"total_balance_usd"`
-	
+	TotalWallets    int     `json:"total_wallets"`
+	EVMWallets      int     `json:"evm_wallets"`
+	SolanaWallets   int     `json:"solana_wallets"`
+	TotalBalanceUSD float64 `json:"total_balance_usd"`
+
 	// Account stats
-	TotalAccounts      int     `json:"total_accounts"`
-	FarcasterAccounts  int     `json:"farcaster_accounts"`
-	TwitterAccounts    int     `json:"twitter_accounts"`
-	DiscordAccounts    int     `json:"discord_accounts"`
-	TelegramAccounts   int     `json:"telegram_accounts"`
-	
+	TotalAccounts     int `json:"total_accounts"`
+	FarcasterAccounts int `json:"farcaster_accounts"`
+	TwitterAccounts   int `json:"twitter_accounts"`
+	DiscordAccounts   int `json:"discord_accounts"`
+	TelegramAccounts  int `json:"telegram_accounts"`
+
 	// Campaign stats
-	ActiveCampaigns    int     `json:"active_campaigns"`
-	CompletedCampaigns int     `json:"completed_campaigns"`
-	TotalTasks         int     `json:"total_tasks"`
-	CompletedTasks     int     `json:"completed_tasks"`
-	PendingTasks       int     `json:"pending_tasks"`
-	
+	ActiveCampaigns    int `json:"active_campaigns"`
+	CompletedCampaigns int `json:"completed_campaigns"`
+	TotalTasks         int `json:"total_tasks"`
+	CompletedTasks     int `json:"completed_tasks"`
+	PendingTasks       int `json:"pending_tasks"`
+
 	// Job stats
-	ActiveJobs         int     `json:"active_jobs"`
-	RunningJobs        int     `json:"running_jobs"`
-	
+	ActiveJobs  int `json:"active_jobs"`
+	RunningJobs int `json:"running_jobs"`
+
 	// Browser stats
-	ActiveSessions     int     `json:"active_sessions"`
-	
+	ActiveSessions int `json:"active_sessions"`
+
 	// Content stats
-	PendingDrafts      int     `json:"pending_drafts"`
-	ScheduledPosts     int     `json:"scheduled_posts"`
-	
+	PendingDrafts  int `json:"pending_drafts"`
+	ScheduledPosts int `json:"scheduled_posts"`
+
 	// Activity
-	TodayTransactions  int     `json:"today_transactions"`
-	TodayPosts         int     `json:"today_posts"`
-	WeeklyActivity     []int   `json:"weekly_activity"` // Last 7 days activity count
+	TodayTransactions int   `json:"today_transactions"`
+	TodayPosts        int   `json:"today_posts"`
+	WeeklyActivity    []int `json:"weekly_activity"` // Last 7 days activity count
 }
 
 func (s *DashboardService) GetStats(userID uuid.UUID) (*DashboardStats, error) {
@@ -147,13 +148,13 @@ func (s *DashboardService) GetStats(userID uuid.UUID) (*DashboardStats, error) {
 	for i := 6; i >= 0; i-- {
 		dayStart := time.Now().AddDate(0, 0, -i).Truncate(24 * time.Hour)
 		dayEnd := dayStart.Add(24 * time.Hour)
-		
+
 		var count int64
 		s.container.DB.Model(&models.AccountActivity{}).
 			Joins("JOIN platform_accounts ON account_activities.account_id = platform_accounts.id").
 			Where("platform_accounts.user_id = ? AND account_activities.created_at >= ? AND account_activities.created_at < ?", userID, dayStart, dayEnd).
 			Count(&count)
-		
+
 		stats.WeeklyActivity[6-i] = int(count)
 	}
 
@@ -162,7 +163,7 @@ func (s *DashboardService) GetStats(userID uuid.UUID) (*DashboardStats, error) {
 
 type RecentActivity struct {
 	ID          uuid.UUID   `json:"id"`
-	Type        string      `json:"type"`   // transaction, post, task, login, etc.
+	Type        string      `json:"type"` // transaction, post, task, login, etc.
 	Title       string      `json:"title"`
 	Description string      `json:"description"`
 	Platform    string      `json:"platform,omitempty"`
@@ -209,21 +210,45 @@ func (s *DashboardService) GetRecentActivity(userID uuid.UUID, limit int) ([]Rec
 		Preload("Task").
 		Find(&taskExecutions)
 
-	// Sort by timestamp
-	// TODO: Merge and sort activities properly
+	// Convert task executions to activities
+	for _, te := range taskExecutions {
+		status := string(te.Status)
+		title := "Task execution"
+		if te.Task.Name != "" {
+			title = te.Task.Name
+		}
+		activities = append(activities, RecentActivity{
+			ID:          te.ID,
+			Type:        "task",
+			Title:       title,
+			Description: string(te.Task.Type) + " task on " + te.Task.TargetPlatform,
+			Status:      status,
+			Timestamp:   te.CreatedAt,
+		})
+	}
+
+	// Sort merged activities by timestamp descending
+	sort.Slice(activities, func(i, j int) bool {
+		return activities[i].Timestamp.After(activities[j].Timestamp)
+	})
+
+	// Limit to requested count
+	if len(activities) > limit {
+		activities = activities[:limit]
+	}
 
 	return activities, nil
 }
 
 type ActiveCampaignInfo struct {
-	ID              uuid.UUID `json:"id"`
-	Name            string    `json:"name"`
-	Type            string    `json:"type"`
-	ProgressPercent float64   `json:"progress_percent"`
-	TotalTasks      int       `json:"total_tasks"`
-	CompletedTasks  int       `json:"completed_tasks"`
+	ID              uuid.UUID  `json:"id"`
+	Name            string     `json:"name"`
+	Type            string     `json:"type"`
+	ProgressPercent float64    `json:"progress_percent"`
+	TotalTasks      int        `json:"total_tasks"`
+	CompletedTasks  int        `json:"completed_tasks"`
 	Deadline        *time.Time `json:"deadline,omitempty"`
-	EstimatedReward string    `json:"estimated_reward,omitempty"`
+	EstimatedReward string     `json:"estimated_reward,omitempty"`
 }
 
 func (s *DashboardService) GetActiveCampaigns(userID uuid.UUID) ([]ActiveCampaignInfo, error) {
