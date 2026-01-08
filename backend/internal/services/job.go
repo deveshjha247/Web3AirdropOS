@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/robfig/cron/v3"
 	"gorm.io/gorm"
 
 	"github.com/web3airdropos/backend/internal/models"
@@ -91,7 +92,13 @@ func (s *JobService) Create(userID uuid.UUID, req *CreateJobRequest) (*models.Au
 
 	// Calculate next run time if cron expression provided
 	if req.CronExpression != "" {
-		// TODO: Parse cron expression and set NextRunAt
+		parser := cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
+		schedule, err := parser.Parse(req.CronExpression)
+		if err != nil {
+			return nil, errors.New("invalid cron expression: " + err.Error())
+		}
+		nextRun := schedule.Next(time.Now())
+		job.NextRunAt = &nextRun
 	}
 
 	if err := s.container.DB.Create(job).Error; err != nil {
@@ -165,8 +172,13 @@ func (s *JobService) Start(userID, jobID uuid.UUID) error {
 		Message: "Starting job: " + job.Name,
 	})
 
-	// TODO: Enqueue job for execution
-	// s.container.Scheduler.EnqueueJob(jobID)
+	// Enqueue job for execution via Redis queue
+	jobPayload, _ := json.Marshal(map[string]interface{}{
+		"job_id":  jobID.String(),
+		"user_id": userID.String(),
+		"type":    job.Type,
+	})
+	s.container.Redis.LPush(s.container.Redis.Context(), "job:queue", string(jobPayload))
 
 	s.container.WSHub.BroadcastToUser(userID.String(), "job:started", job)
 	return nil
@@ -191,7 +203,8 @@ func (s *JobService) Stop(userID, jobID uuid.UUID) error {
 		Message: "Stopping job: " + job.Name,
 	})
 
-	// TODO: Cancel running job if any
+	// Signal job cancellation via Redis pub/sub
+	s.container.Redis.Publish(s.container.Redis.Context(), "job:cancel", jobID.String())
 
 	s.container.WSHub.BroadcastToUser(userID.String(), "job:stopped", job)
 	return nil

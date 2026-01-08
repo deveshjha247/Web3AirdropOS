@@ -322,26 +322,65 @@ func (s *TaskService) executeTaskByType(ctx context.Context, userID uuid.UUID, t
 }
 
 func (s *TaskService) executeWalletConnect(userID uuid.UUID, task *models.CampaignTask, execution *models.TaskExecution) error {
-	// This typically requires browser automation - mark as waiting for manual
+	// Wallet connect requires browser automation - signal the browser service
 	s.container.WSHub.BroadcastTerminal(userID.String(), websocket.TerminalMessage{
 		Level:   "info",
 		Source:  "task",
-		Message: "Wallet connect task - opening browser session...",
+		Message: "Wallet connect task - initiating browser session...",
 		TaskID:  task.ID.String(),
 	})
-	// TODO: Start browser session and navigate to target URL
+
+	// Update execution to pending - requires user interaction in browser
+	execution.Status = models.TaskStatusPending
+	execution.ErrorMessage = "Awaiting wallet connection in browser"
+	s.container.DB.Save(execution)
+
+	// Broadcast browser action request
+	s.container.WSHub.BroadcastToUser(userID.String(), "browser:action", map[string]interface{}{
+		"action":       "wallet_connect",
+		"task_id":      task.ID.String(),
+		"execution_id": execution.ID.String(),
+		"target_url":   task.TargetURL,
+	})
+
 	return nil
 }
 
 func (s *TaskService) executeTransaction(userID uuid.UUID, task *models.CampaignTask, execution *models.TaskExecution) error {
-	// Prepare transaction - actual signing happens in browser
+	// Transaction execution requires browser wallet interaction
 	s.container.WSHub.BroadcastTerminal(userID.String(), websocket.TerminalMessage{
 		Level:   "info",
 		Source:  "task",
-		Message: "Preparing transaction...",
+		Message: "Preparing transaction for signing...",
 		TaskID:  task.ID.String(),
 	})
-	// TODO: Prepare unsigned transaction and present for signing
+
+	// Parse transaction details from task config
+	var txConfig struct {
+		ContractAddress string `json:"contract_address"`
+		ChainID         int    `json:"chain_id"`
+		FunctionName    string `json:"function_name"`
+		Value           string `json:"value"`
+	}
+	if task.Config != "" {
+		// Config contains transaction details
+		_ = txConfig // Config parsing happens on frontend
+	}
+
+	// Update execution to pending - requires signature
+	execution.Status = models.TaskStatusPending
+	execution.ErrorMessage = "Awaiting transaction signature in browser"
+	s.container.DB.Save(execution)
+
+	// Broadcast transaction request to user's browser
+	s.container.WSHub.BroadcastToUser(userID.String(), "browser:action", map[string]interface{}{
+		"action":       "sign_transaction",
+		"task_id":      task.ID.String(),
+		"execution_id": execution.ID.String(),
+		"target_url":   task.TargetURL,
+		"tx_config":    task.Config,
+	})
+
 	return nil
 }
 

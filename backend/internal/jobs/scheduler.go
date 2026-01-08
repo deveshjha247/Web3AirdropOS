@@ -16,6 +16,7 @@ import (
 	"github.com/robfig/cron/v3"
 	"gorm.io/gorm"
 
+	"github.com/web3airdropos/backend/internal/config"
 	"github.com/web3airdropos/backend/internal/models"
 	"github.com/web3airdropos/backend/internal/websocket"
 )
@@ -26,6 +27,7 @@ type Scheduler struct {
 	redis    *redis.Client
 	wsHub    *websocket.Hub
 	cron     *cron.Cron
+	config   *config.Config
 	workers  map[string]*Worker
 	jobQueue chan *JobContext
 	stopChan chan struct{}
@@ -52,12 +54,13 @@ type Worker struct {
 type JobHandler func(ctx context.Context, jctx *JobContext, s *Scheduler) error
 
 // NewScheduler creates a new job scheduler
-func NewScheduler(db *gorm.DB, redis *redis.Client, wsHub *websocket.Hub) *Scheduler {
+func NewScheduler(db *gorm.DB, redis *redis.Client, wsHub *websocket.Hub, cfg *config.Config) *Scheduler {
 	return &Scheduler{
 		db:       db,
 		redis:    redis,
 		wsHub:    wsHub,
 		cron:     cron.New(cron.WithSeconds()),
+		config:   cfg,
 		workers:  make(map[string]*Worker),
 		jobQueue: make(chan *JobContext, 100),
 		stopChan: make(chan struct{}),

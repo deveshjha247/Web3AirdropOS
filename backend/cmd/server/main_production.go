@@ -97,7 +97,7 @@ func main() {
 	log.Println("✅ WebSocket hub started")
 
 	// 9. Job Scheduler
-	scheduler := jobs.NewScheduler(db, redisClient, wsHub)
+	scheduler := jobs.NewScheduler(db, redisClient, wsHub, cfg)
 	go scheduler.Start()
 	log.Println("✅ Job scheduler started")
 
