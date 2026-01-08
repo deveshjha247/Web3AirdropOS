@@ -1,3 +1,6 @@
+// Package main provides a mock backend server for development and testing.
+// This is NOT for production use - it uses in-memory storage and mock data.
+// For production, use cmd/server/main_production.go instead.
 package main
 
 import (

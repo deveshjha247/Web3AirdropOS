@@ -46,13 +46,13 @@ type BrowserSession struct {
 type SessionStatus string
 
 const (
-	SessionStatusStarting   SessionStatus = "starting"
-	SessionStatusReady      SessionStatus = "ready"
-	SessionStatusBusy       SessionStatus = "busy"
-	SessionStatusPaused     SessionStatus = "paused"
-	SessionStatusStopping   SessionStatus = "stopping"
-	SessionStatusStopped    SessionStatus = "stopped"
-	SessionStatusFailed     SessionStatus = "failed"
+	SessionStatusStarting SessionStatus = "starting"
+	SessionStatusReady    SessionStatus = "ready"
+	SessionStatusBusy     SessionStatus = "busy"
+	SessionStatusPaused   SessionStatus = "paused"
+	SessionStatusStopping SessionStatus = "stopping"
+	SessionStatusStopped  SessionStatus = "stopped"
+	SessionStatusFailed   SessionStatus = "failed"
 )
 
 func NewBrowserService(c *Container) *BrowserService {
@@ -280,11 +280,11 @@ func (s *BrowserService) startBrowserContainer(userID uuid.UUID, session *models
 
 	// Update session with container info
 	s.container.DB.Model(session).Updates(map[string]interface{}{
-		"container_id":   containerID,
-		"vnc_url":        fmt.Sprintf("vnc://localhost:%s", vncPort),
-		"debugger_url":   fmt.Sprintf("http://localhost:%s", debugPort),
-		"websocket_url":  fmt.Sprintf("ws://localhost:%s", wsPort),
-		"status":         "ready",
+		"container_id":  containerID,
+		"vnc_url":       fmt.Sprintf("vnc://localhost:%s", vncPort),
+		"debugger_url":  fmt.Sprintf("http://localhost:%s", debugPort),
+		"websocket_url": fmt.Sprintf("ws://localhost:%s", wsPort),
+		"status":        "ready",
 	})
 
 	// Store in memory
@@ -834,7 +834,7 @@ func (s *BrowserService) CleanupStaleSessions(maxIdleTime time.Duration) error {
 	var staleSessions []models.BrowserSession
 	threshold := time.Now().Add(-maxIdleTime)
 
-	if err := s.container.DB.Where("status NOT IN (?, ?) AND last_activity_at < ?", 
+	if err := s.container.DB.Where("status NOT IN (?, ?) AND last_activity_at < ?",
 		"stopped", "failed", threshold).Find(&staleSessions).Error; err != nil {
 		return err
 	}
@@ -878,24 +878,24 @@ func (s *BrowserService) TakeScreenshotProof(userID, sessionID uuid.UUID, taskEx
 	// Generate filename
 	timestamp := time.Now().Format("20060102_150405")
 	filename := fmt.Sprintf("proof_%s_%s.png", taskExecutionID.String()[:8], timestamp)
-	
+
 	// Save screenshot to configured storage path
 	storagePath := s.container.Config.ProofStoragePath
 	if storagePath == "" {
 		storagePath = "./storage/proofs"
 	}
-	
+
 	// Ensure directory exists
 	if err := os.MkdirAll(storagePath, 0755); err != nil {
 		return "", fmt.Errorf("failed to create storage directory: %w", err)
 	}
-	
+
 	// Save file
 	filePath := filepath.Join(storagePath, filename)
 	if err := os.WriteFile(filePath, screenshotData, 0644); err != nil {
 		return "", fmt.Errorf("failed to save screenshot: %w", err)
 	}
-	
+
 	// Use relative path for database storage
 	screenshotPath := "/proofs/" + filename
 
@@ -922,7 +922,7 @@ func (s *BrowserService) TakeScreenshotProof(userID, sessionID uuid.UUID, taskEx
 // ListActiveSessions returns all active sessions for a user
 func (s *BrowserService) ListActiveSessions(userID uuid.UUID) ([]map[string]interface{}, error) {
 	var sessions []models.BrowserSession
-	if err := s.container.DB.Where("user_id = ? AND status NOT IN (?, ?)", 
+	if err := s.container.DB.Where("user_id = ? AND status NOT IN (?, ?)",
 		userID, "stopped", "failed").Find(&sessions).Error; err != nil {
 		return nil, err
 	}
